@@ -23,7 +23,7 @@
     "commander": "^12",
     "googleapis": "^144",
     "express": "^4",
-    "multer": "^1",
+    "multer": "^2",
     "open": "^10",
     "ora": "^8",
     "chalk": "^5",
