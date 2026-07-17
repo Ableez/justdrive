@@ -16,6 +16,8 @@ export default defineConfig({
   noExternal: ['@juststore/shared'],
   define: {
     __VERSION__: JSON.stringify(pkg.version),
+    __CLIENT_ID__: JSON.stringify(process.env.CLI_BUILD_CLIENT_ID || ''),
+    __CLIENT_SECRET__: JSON.stringify(process.env.CLI_BUILD_CLIENT_SECRET || ''),
   },
   banner: {
     js: '#!/usr/bin/env node',
