@@ -13,7 +13,7 @@
   "devDependencies": {
     "turbo": "^2",
     "typescript": "^5",
-    "vitest": "^3",
+    "vitest": "^4",
     "@vitest/coverage-v8": "^3",
     "@vitest/ui": "^3",
     "@testing-library/react": "^16",
