@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { fetchDriveToken, requireSession } from '../api/client.js';
+import { fetchDriveToken, getApiUrl, requireSession } from '../api/client.js';
 import { flush, pendingCount } from '../logger/outbox.js';
 
 export const statusCommand = new Command('status')
@@ -9,7 +9,8 @@ export const statusCommand = new Command('status')
     const session = await requireSession();
     console.log(`Machine: ${session.deviceName}`);
     if (session.email) console.log(`Account: ${session.email}`);
-    console.log(`Server: ${session.apiUrl}`);
+    // The live URL, which is what every request actually goes to.
+    console.log(`Server: ${getApiUrl()}`);
 
     const pending = await pendingCount();
     if (pending > 0) {

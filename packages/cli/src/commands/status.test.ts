@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../api/client.js', () => ({
   requireSession: mocks.requireSession,
   fetchDriveToken: mocks.fetchDriveToken,
+  getApiUrl: () => process.env.JUSTDRIVE_API_URL || 'https://drive.astexlabs.com',
 }));
 vi.mock('../logger/outbox.js', () => ({
   pendingCount: mocks.pendingCount,
@@ -33,12 +34,20 @@ beforeEach(() => {
 });
 
 describe('statusCommand', () => {
-  it('shows the machine, account and server', async () => {
+  it('shows the machine, account and the server it actually calls', async () => {
+    process.env.JUSTDRIVE_API_URL = 'http://localhost:3000';
+    mocks.requireSession.mockResolvedValue({
+      deviceName: 'vps-1',
+      email: 'a@b.com',
+      // Deliberately stale, to prove it is not what gets reported.
+      apiUrl: 'https://drive.astexlabs.com',
+    });
+
     await statusCommand.parseAsync([], { from: 'user' });
 
     expect(output()).toContain('Machine: vps-1');
     expect(output()).toContain('Account: a@b.com');
-    expect(output()).toContain('Server: https://drive.astexlabs.com');
+    expect(output()).toContain('Server: http://localhost:3000');
   });
 
   it('reports a live Drive token and syncs the queue', async () => {
