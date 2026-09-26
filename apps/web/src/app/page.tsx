@@ -24,7 +24,7 @@ export default function Home() {
       <header className="sticky top-0 z-50 border-b border-zinc-200 bg-white/80 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/80">
         <nav className="mx-auto flex max-w-4xl items-center justify-between px-4 py-3">
           <a href="#" className="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-            juststore
+            justdrive
           </a>
           <div className="hidden gap-6 sm:flex">
             {sections.map((s) => (
@@ -73,8 +73,8 @@ export default function Home() {
               { title: "Path-Based Navigation", body: "Use familiar paths like photos/2024/vacation.jpg. Resolution walks the tree segment by segment." },
               { title: "OAuth2 Auth Flow", body: "One command to authenticate. Refresh tokens are stored locally and auto-renewed." },
               { title: "Progress & Formatting", body: "Spinners, table output, JSON mode, and colorized status for a polished CLI experience." },
-              { title: "Embedded Dashboard", body: "juststore dashboard starts a local web UI with file browser, upload form, activity log, and auth status." },
-              { title: "Activity Logging", body: "Every operation is logged to ~/.juststore/activity.json. Review what you've done." },
+              { title: "Embedded Dashboard", body: "justdrive dashboard starts a local web UI with file browser, upload form, activity log, and auth status." },
+              { title: "Activity Logging", body: "Every operation is logged to ~/.justdrive/activity.json. Review what you've done." },
             ].map((f) => (
               <div key={f.title} className="rounded-lg border border-zinc-200 p-5 dark:border-zinc-800">
                 <h3 className="mb-1.5 font-medium text-zinc-900 dark:text-zinc-50">
@@ -96,11 +96,11 @@ export default function Home() {
           <p className="mb-4 text-zinc-500 dark:text-zinc-400">
             Install globally via npm:
           </p>
-          <Pre>{`npm install -g @astexlabs/juststore`}</Pre>
+          <Pre>{`npm install -g @justdrive`}</Pre>
           <p className="mt-4 text-zinc-500 dark:text-zinc-400">
             Or run directly without installing:
           </p>
-          <Pre>{`npx @astexlabs/juststore --help`}</Pre>
+          <Pre>{`npx @justdrive --help`}</Pre>
         </section>
 
         {/* Quick Start */}
@@ -110,11 +110,11 @@ export default function Home() {
           </h2>
           <div className="space-y-4">
             {[
-              { step: "1", title: "Authenticate", code: "juststore auth login" },
-              { step: "2", title: "List your Drive root", code: "juststore files ls" },
-              { step: "3", title: "Upload a file", code: "juststore files upload ./resume.pdf" },
-              { step: "4", title: "Download a file", code: "juststore files download photos/vacation.jpg" },
-              { step: "5", title: "Start the dashboard", code: "juststore dashboard" },
+              { step: "1", title: "Authenticate", code: "justdrive auth login" },
+              { step: "2", title: "List your Drive root", code: "justdrive files ls" },
+              { step: "3", title: "Upload a file", code: "justdrive files upload ./resume.pdf" },
+              { step: "4", title: "Download a file", code: "justdrive files download photos/vacation.jpg" },
+              { step: "5", title: "Start the dashboard", code: "justdrive dashboard" },
             ].map((s) => (
               <div key={s.step} className="flex gap-4">
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900">
@@ -137,44 +137,44 @@ export default function Home() {
           <div className="space-y-10">
             {[
               {
-                group: "juststore auth",
+                group: "justdrive auth",
                 desc: "Authentication commands",
                 items: [
-                  { cmd: "juststore auth login", desc: "Authenticate with Google Drive via OAuth2. Opens a browser for consent." },
-                  { cmd: "juststore auth logout", desc: "Revoke stored credentials and delete the token file." },
+                  { cmd: "justdrive auth login", desc: "Authenticate with Google Drive via OAuth2. Opens a browser for consent." },
+                  { cmd: "justdrive auth logout", desc: "Revoke stored credentials and delete the token file." },
                 ],
               },
               {
-                group: "juststore files",
+                group: "justdrive files",
                 desc: "File operations",
                 items: [
-                  { cmd: "juststore files ls [path]", desc: "List files in a directory. Supports --json for machine-readable output." },
-                  { cmd: "juststore files upload <local> [drive-path]", desc: "Upload a file to Drive. Optionally specify a destination directory." },
-                  { cmd: "juststore files download <drive-path> [local]", desc: "Download a file from Drive to local disk." },
-                  { cmd: "juststore files mkdir <path>", desc: "Create a directory on Drive." },
-                  { cmd: "juststore files mv <source> <dest>", desc: "Move or rename a file or folder." },
-                  { cmd: "juststore files rm <path>", desc: "Remove a file (moves to Drive trash)." },
+                  { cmd: "justdrive files ls [path]", desc: "List files in a directory. Supports --json for machine-readable output." },
+                  { cmd: "justdrive files upload <local> [drive-path]", desc: "Upload a file to Drive. Optionally specify a destination directory." },
+                  { cmd: "justdrive files download <drive-path> [local]", desc: "Download a file from Drive to local disk." },
+                  { cmd: "justdrive files mkdir <path>", desc: "Create a directory on Drive." },
+                  { cmd: "justdrive files mv <source> <dest>", desc: "Move or rename a file or folder." },
+                  { cmd: "justdrive files rm <path>", desc: "Remove a file (moves to Drive trash)." },
                 ],
               },
               {
-                group: "juststore share",
+                group: "justdrive share",
                 desc: "Sharing",
                 items: [
-                  { cmd: "juststore share <path> [--email] [--role]", desc: "Share a file. Default role is reader. Omit email for a link-only share." },
+                  { cmd: "justdrive share <path> [--email] [--role]", desc: "Share a file. Default role is reader. Omit email for a link-only share." },
                 ],
               },
               {
-                group: "juststore status",
+                group: "justdrive status",
                 desc: "Status",
                 items: [
-                  { cmd: "juststore status", desc: "Show authentication status, user email, and token expiry." },
+                  { cmd: "justdrive status", desc: "Show authentication status, user email, and token expiry." },
                 ],
               },
               {
-                group: "juststore dashboard",
+                group: "justdrive dashboard",
                 desc: "Web dashboard",
                 items: [
-                  { cmd: "juststore dashboard [-p, --port]", desc: "Start the companion web dashboard on port 4000 (or next available)." },
+                  { cmd: "justdrive dashboard [-p, --port]", desc: "Start the companion web dashboard on port 4000 (or next available)." },
                 ],
               },
             ].map((group) => (
@@ -203,7 +203,7 @@ export default function Home() {
             The embedded web dashboard provides a visual interface for browsing files,
             uploading, viewing activity, and managing authentication. Start it with:
           </p>
-          <Pre>{`juststore dashboard --port 4000`}</Pre>
+          <Pre>{`justdrive dashboard --port 4000`}</Pre>
           <p className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">
             The dashboard includes a file browser with folder navigation, an upload form,
             an activity log, and an auth status panel. Runs entirely on your local machine.
@@ -213,7 +213,7 @@ export default function Home() {
         {/* Footer */}
         <footer className="border-t border-zinc-200 pt-8 text-center text-sm text-zinc-400 dark:border-zinc-800">
           <p className="mb-2">
-            <a href="https://github.com/Ableez/juststore" className="hover:text-zinc-600 dark:hover:text-zinc-300">
+            <a href="https://github.com/Ableez/justdrive" className="hover:text-zinc-600 dark:hover:text-zinc-300">
               GitHub
             </a>
           </p>

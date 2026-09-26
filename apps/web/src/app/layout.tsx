@@ -13,11 +13,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "juststore — Google Drive from the CLI",
+  title: "justdrive — Google Drive from the CLI",
   description:
     "Manage Google Drive files from your terminal. Upload, download, browse, share, and organize files without leaving the command line.",
   openGraph: {
-    title: "juststore — Google Drive from the CLI",
+    title: "justdrive — Google Drive from the CLI",
     description:
       "Manage Google Drive files from your terminal. Upload, download, browse, share, and organize files without leaving the command line.",
   },
