@@ -4,7 +4,8 @@ import { fetchStatus } from '../api/client';
 interface AuthInfo {
   authenticated: boolean;
   email?: string;
-  expiresAt?: string | null;
+  fullAccess?: boolean;
+  error?: string;
 }
 
 export function AuthStatus() {
@@ -14,7 +15,9 @@ export function AuthStatus() {
   useEffect(() => {
     fetchStatus()
       .then(setAuth)
-      .catch(() => setAuth({ authenticated: false }))
+      .catch((err) =>
+        setAuth({ authenticated: false, error: err instanceof Error ? err.message : undefined }),
+      )
       .finally(() => setLoading(false));
   }, []);
 
@@ -27,13 +30,15 @@ export function AuthStatus() {
         <div>
           <span>Authenticated</span>
           {auth.email && <span> as {auth.email}</span>}
-          {auth.expiresAt && (
-            <span> (expires: {new Date(auth.expiresAt).toLocaleString()})</span>
+          {auth.fullAccess !== undefined && (
+            <span> ({auth.fullAccess ? 'full Drive access' : 'files created by justdrive'})</span>
           )}
         </div>
+      ) : auth?.error ? (
+        <div role="alert">{auth.error}</div>
       ) : (
         <div>
-          Not authenticated. Run: <code>juststore auth login</code>
+          Not authenticated. Run: <code>justdrive auth login</code>
         </div>
       )}
     </div>

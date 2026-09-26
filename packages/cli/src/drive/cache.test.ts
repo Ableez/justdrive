@@ -10,7 +10,7 @@ vi.mock('fs/promises', () => ({
 }));
 
 import fs from 'fs/promises';
-import { getCachedPath, setCachedPath, clearCache, loadConfig } from './cache.js';
+import { getCachedPath, setCachedPath, clearCache, loadConfig, invalidateCachedPath } from './cache.js';
 
 describe('drive/cache', () => {
   beforeEach(() => {
@@ -93,6 +93,28 @@ describe('drive/cache', () => {
 
       const config = await loadConfig();
       expect(config).toEqual({});
+    });
+  });
+
+  describe('invalidateCachedPath', () => {
+    it('drops the path, its descendants, and segment keys under the removed ID', async () => {
+      vi.mocked(fs.readFile).mockResolvedValue(
+        JSON.stringify({
+          paths: {
+            __root__: 'root',
+            'root/photos': 'photos_id',
+            photos: 'photos_id',
+            'photos/2024': 'y2024_id',
+            'photos_id/2024': 'y2024_id',
+            'photos-old': 'other_id',
+          },
+        }),
+      );
+
+      await invalidateCachedPath('photos', 'photos_id');
+
+      const written = JSON.parse(vi.mocked(fs.writeFile).mock.calls[0][1] as string);
+      expect(written.paths).toEqual({ __root__: 'root', 'photos-old': 'other_id' });
     });
   });
 });

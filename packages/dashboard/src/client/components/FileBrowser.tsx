@@ -26,7 +26,7 @@ export function FileBrowser() {
   }, [currentPath]);
 
   async function handleDelete(file: DriveFile) {
-    if (!confirm(`Delete "${file.name}"?`)) return;
+    if (!confirm(`Move "${file.name}" to the Drive trash?`)) return;
     try {
       const filePath = currentPath ? `${currentPath}/${file.name}` : file.name;
       await deleteFile(filePath);

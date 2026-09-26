@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fetchActivity, fetchFiles, uploadFile, fetchStatus } from './client';
+import { fetchActivity, fetchFiles, uploadFile, fetchStatus, initSession } from './client';
 
 describe('api/client', () => {
   beforeEach(() => {
@@ -19,7 +19,7 @@ describe('api/client', () => {
 
       const result = await fetchActivity();
       expect(result).toEqual(mockEntries);
-      expect(fetch).toHaveBeenCalledWith('/api/activity');
+      expect(fetch).toHaveBeenCalledWith('/api/activity', expect.any(Object));
     });
 
     it('throws on non-ok response', async () => {
@@ -42,7 +42,7 @@ describe('api/client', () => {
 
       const result = await fetchFiles();
       expect(result).toEqual(mockFiles);
-      expect(fetch).toHaveBeenCalledWith('/api/files');
+      expect(fetch).toHaveBeenCalledWith('/api/files', expect.any(Object));
     });
 
     it('encodes path in URL', async () => {
@@ -52,7 +52,7 @@ describe('api/client', () => {
       } as Response);
 
       await fetchFiles('photos/2024');
-      expect(fetch).toHaveBeenCalledWith('/api/files?path=photos%2F2024');
+      expect(fetch).toHaveBeenCalledWith('/api/files?path=photos%2F2024', expect.any(Object));
     });
 
     it('throws on non-ok response', async () => {
@@ -109,10 +109,40 @@ describe('api/client', () => {
     it('throws on non-ok response', async () => {
       vi.mocked(fetch).mockResolvedValue({
         ok: false,
+        json: () => Promise.reject(new Error('not json')),
         status: 500,
       } as Response);
 
       await expect(fetchStatus()).rejects.toThrow('Failed to fetch status');
     });
+  });
+});
+
+describe('session key', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve([]) }));
+    sessionStorage.clear();
+  });
+
+  it('moves the key from the URL fragment into a request header', async () => {
+    window.history.replaceState(null, '', '/#session=abc123');
+    initSession();
+
+    expect(window.location.hash).toBe('');
+    expect(sessionStorage.getItem('justdrive.session')).toBe('abc123');
+
+    await fetchActivity();
+    const init = vi.mocked(fetch).mock.calls[0][1] as RequestInit;
+    expect(new Headers(init.headers).get('X-Justdrive-Session')).toBe('abc123');
+  });
+
+  it('restores the key from sessionStorage after a reload', async () => {
+    sessionStorage.setItem('justdrive.session', 'stored');
+    window.history.replaceState(null, '', '/');
+    initSession();
+
+    await fetchActivity();
+    const init = vi.mocked(fetch).mock.calls[0][1] as RequestInit;
+    expect(new Headers(init.headers).get('X-Justdrive-Session')).toBe('stored');
   });
 });

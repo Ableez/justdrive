@@ -32,6 +32,25 @@ export async function removeCachedPath(drivePath: string): Promise<void> {
   await writeCache(data);
 }
 
+/**
+ * Drop every cache entry that points at or below a file that was removed or
+ * moved: its path, its descendants' paths, and segment keys under its ID.
+ */
+export async function invalidateCachedPath(drivePath: string, fileId: string): Promise<void> {
+  const data = await readCache();
+  for (const [key, value] of Object.entries(data.paths)) {
+    if (
+      value === fileId ||
+      key === drivePath ||
+      key.startsWith(`${drivePath}/`) ||
+      key.startsWith(`${fileId}/`)
+    ) {
+      delete data.paths[key];
+    }
+  }
+  await writeCache(data);
+}
+
 export async function clearCache(): Promise<void> {
   await writeCache({ paths: {} });
 }

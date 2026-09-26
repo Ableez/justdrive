@@ -26,6 +26,15 @@ export interface OAuthTokens {
   expiry_date?: number | null;
   token_type?: string | null;
   scope?: string;
+  id_token?: string | null;
+}
+
+export interface StoredAuth {
+  version: 1;
+  clientId: string;
+  scopes: string[];
+  email?: string | null;
+  tokens: OAuthTokens;
 }
 
 export interface Config {

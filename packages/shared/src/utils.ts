@@ -1,10 +1,10 @@
-import { DEFAULT_PORT, MAX_PORT_ATTEMPTS } from './constants.js';
+import { DEFAULT_PORT, JUSTSTORE_ROOT_FOLDER, MAX_PORT_ATTEMPTS } from './constants.js';
 import net from 'net';
 
 export function normalizePath(path: string): string {
-  let p = path.replace(/^\.\/?/, '').replace(/^juststore\/?/, '');
-  p = p.replace(/\/+$/, '');
-  return p;
+  const segments = path.split('/').filter((s) => s !== '' && s !== '.');
+  if (segments[0] === JUSTSTORE_ROOT_FOLDER) segments.shift();
+  return segments.join('/');
 }
 
 export function isAbsolutePath(path: string): boolean {

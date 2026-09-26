@@ -10,7 +10,7 @@ declare const __VERSION__: string;
 const program = new Command();
 
 program
-  .name('juststore')
+  .name('justdrive')
   .description('CLI tool for Google Drive file management')
   .version(__VERSION__);
 

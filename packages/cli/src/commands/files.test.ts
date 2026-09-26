@@ -128,4 +128,37 @@ describe('filesCommand', () => {
     expect(removeFile).toHaveBeenCalled();
     logSpy.mockRestore();
   });
+
+  it('rm --permanent deletes permanently', async () => {
+    vi.mocked(removeFile).mockResolvedValue(undefined);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const rmCmd = filesCommand.commands.find((c) => c.name() === 'rm')!;
+
+    await rmCmd.parseAsync(['a.txt', '--permanent'], { from: 'user' });
+
+    expect(removeFile).toHaveBeenCalledWith('a.txt', { permanent: true });
+    expect(logSpy).toHaveBeenCalledWith('Deleted permanently: a.txt');
+    logSpy.mockRestore();
+  });
+
+  it.each([
+    ['ls', [], listFiles],
+    ['upload', ['local.txt'], uploadFile],
+    ['download', ['remote.txt'], downloadFile],
+    ['mkdir', ['dir'], createDirectory],
+    ['mv', ['a', 'b'], moveFile],
+    ['rm', ['a'], removeFile],
+  ] as const)('%s reports auth errors readably and exits 1', async (name, args, op) => {
+    vi.mocked(op).mockRejectedValue(new Error('invalid_grant'));
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const cmd = filesCommand.commands.find((c) => c.name() === name)!;
+    await cmd.parseAsync([...args], { from: 'user' });
+
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(errorSpy).toHaveBeenCalledWith(expect.any(String), expect.stringContaining('justdrive auth login'));
+    exitSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
 });

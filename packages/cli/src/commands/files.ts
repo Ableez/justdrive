@@ -10,6 +10,7 @@ import {
 import { formatTable } from '../output/table.js';
 import { withProgress } from '../output/progress.js';
 import { formatJson } from '../output/json.js';
+import { describeError } from '../auth/errors.js';
 
 export const filesCommand = new Command('files')
   .description('File operations');
@@ -28,7 +29,7 @@ filesCommand
         console.log(formatTable(files));
       }
     } catch (error) {
-      console.error('ls failed:', error instanceof Error ? error.message : error);
+      console.error('ls failed:', describeError(error));
       process.exit(1);
     }
   });
@@ -45,7 +46,7 @@ filesCommand
       );
       console.log(`Uploaded: ${result.name} (${result.id})`);
     } catch (error) {
-      console.error('Upload failed:', error instanceof Error ? error.message : error);
+      console.error('Upload failed:', describeError(error));
       process.exit(1);
     }
   });
@@ -62,7 +63,7 @@ filesCommand
       );
       console.log(`Downloaded: ${result}`);
     } catch (error) {
-      console.error('Download failed:', error instanceof Error ? error.message : error);
+      console.error('Download failed:', describeError(error));
       process.exit(1);
     }
   });
@@ -76,7 +77,7 @@ filesCommand
       const result = await createDirectory(path);
       console.log(`Created directory: ${result.name} (${result.id})`);
     } catch (error) {
-      console.error('mkdir failed:', error instanceof Error ? error.message : error);
+      console.error('mkdir failed:', describeError(error));
       process.exit(1);
     }
   });
@@ -91,21 +92,22 @@ filesCommand
       const result = await moveFile(source, dest);
       console.log(`Moved to: ${result.name} (${result.id})`);
     } catch (error) {
-      console.error('mv failed:', error instanceof Error ? error.message : error);
+      console.error('mv failed:', describeError(error));
       process.exit(1);
     }
   });
 
 filesCommand
   .command('rm')
-  .description('Remove a file')
+  .description('Move a file to the Drive trash')
   .argument('<path>', 'File path')
-  .action(async (path: string) => {
+  .option('--permanent', 'Delete permanently instead of moving to trash')
+  .action(async (path: string, options: { permanent?: boolean }) => {
     try {
-      await removeFile(path);
-      console.log(`Removed: ${path}`);
+      await removeFile(path, { permanent: options.permanent });
+      console.log(options.permanent ? `Deleted permanently: ${path}` : `Moved to trash: ${path}`);
     } catch (error) {
-      console.error('rm failed:', error instanceof Error ? error.message : error);
+      console.error('rm failed:', describeError(error));
       process.exit(1);
     }
   });

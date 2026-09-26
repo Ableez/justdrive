@@ -20,13 +20,13 @@ describe('dashboardCommand', () => {
   it('calls startDashboard with no port by default', async () => {
     vi.mocked(startDashboard).mockResolvedValue(undefined as never);
     await dashboardCommand.parseAsync(['dashboard'], { from: 'user' });
-    expect(startDashboard).toHaveBeenCalledWith(undefined);
+    expect(startDashboard).toHaveBeenCalledWith({ port: undefined, openBrowser: undefined });
   });
 
   it('passes custom port', async () => {
     vi.mocked(startDashboard).mockResolvedValue(undefined as never);
-    await dashboardCommand.parseAsync(['dashboard', '--port', '5000'], { from: 'user' });
-    expect(startDashboard).toHaveBeenCalledWith(5000);
+    await dashboardCommand.parseAsync(['dashboard', '--port', '5000', '--open'], { from: 'user' });
+    expect(startDashboard).toHaveBeenCalledWith({ port: 5000, openBrowser: true });
   });
 
   it('exits with code 1 on error', async () => {

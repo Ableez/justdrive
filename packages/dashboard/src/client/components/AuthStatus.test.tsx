@@ -58,7 +58,7 @@ describe('AuthStatus', () => {
     render(<AuthStatus />);
 
     await waitFor(() => {
-      expect(screen.getByText(/Not authenticated/)).toBeInTheDocument();
+      expect(screen.getByRole('alert')).toHaveTextContent('Network error');
     });
   });
 });

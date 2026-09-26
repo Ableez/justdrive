@@ -1,47 +1,51 @@
 import { Command } from 'commander';
-import { loadTokens } from '../auth/tokens.js';
-import { loadConfig, setCachedPath } from '../drive/cache.js';
-import { getUserEmail } from '../drive/client.js';
+import { DRIVE_SCOPE } from '@juststore/shared';
+import { loadAuth, saveAuth } from '../auth/tokens.js';
+import { describeError } from '../auth/errors.js';
+import { loadConfig } from '../drive/cache.js';
+import { fetchAccountEmail, getAuthenticatedClient } from '../drive/client.js';
 import chalk from 'chalk';
 
 export const statusCommand = new Command('status')
   .description('Show current status')
   .action(async () => {
     try {
-      const tokens = await loadTokens();
-      const config = await loadConfig();
+      const auth = await loadAuth();
 
-      if (!tokens) {
-        console.log(chalk.red('Not authenticated. Run: juststore auth login'));
+      if (!auth) {
+        console.log(chalk.red('Not authenticated. Run: justdrive auth login'));
         return;
       }
 
-      console.log(chalk.green('Authenticated'));
-
-      // Fetch and cache email if not already cached
-      if (!config.userEmail) {
-        const email = await getUserEmail();
-        if (email) {
-          await setCachedPath('__user_email__', email);
-          console.log(`User: ${email}`);
-        }
-      } else {
-        console.log(`User: ${config.userEmail}`);
+      // Access tokens expire hourly and are refreshed automatically, so the
+      // only meaningful check is whether Google still accepts the login.
+      let email = auth.email ?? null;
+      try {
+        email = (await fetchAccountEmail(await getAuthenticatedClient())) ?? email;
+        console.log(chalk.green('Authenticated'));
+      } catch (error) {
+        console.log(chalk.red('Session invalid: ') + describeError(error));
+        return;
       }
 
+      if (email && email !== auth.email) {
+        const latest = (await loadAuth()) ?? auth;
+        await saveAuth({ ...latest, email });
+      }
+      if (email) console.log(`User: ${email}`);
+
+      const fullAccess = auth.scopes.includes(DRIVE_SCOPE);
+      console.log(`Access: ${fullAccess ? 'entire Google Drive' : 'files created by justdrive'}`);
+      if (!auth.tokens.refresh_token) {
+        console.log(chalk.yellow('No refresh token saved; you will need to log in again when this session expires.'));
+      }
+
+      const config = await loadConfig();
       if (config.rootFolderId) {
         console.log(`Root folder ID: ${config.rootFolderId}`);
       }
-
-      if (tokens.expiry_date) {
-        const expiresAt = new Date(tokens.expiry_date);
-        const isExpired = expiresAt < new Date();
-        console.log(
-          `Token expires: ${expiresAt.toISOString()} ${isExpired ? chalk.red('(EXPIRED)') : chalk.green('(valid)')}`,
-        );
-      }
     } catch (error) {
-      console.error('Status check failed:', error instanceof Error ? error.message : error);
+      console.error('Status check failed:', describeError(error));
       process.exit(1);
     }
   });

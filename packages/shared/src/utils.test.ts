@@ -31,16 +31,20 @@ describe('normalizePath', () => {
     expect(normalizePath('./photos/vacation')).toBe('photos/vacation');
   });
 
-  it('strips leading .', () => {
-    expect(normalizePath('.photos')).toBe('photos');
+  it('keeps dotfile names intact', () => {
+    expect(normalizePath('.env')).toBe('.env');
   });
 
   it('strips leading juststore/', () => {
     expect(normalizePath('juststore/photos/vacation')).toBe('photos/vacation');
   });
 
-  it('strips leading juststore without slash', () => {
-    expect(normalizePath('juststorephotos')).toBe('photos');
+  it('does not strip juststore as a name prefix', () => {
+    expect(normalizePath('juststore-backups/a.txt')).toBe('juststore-backups/a.txt');
+  });
+
+  it('strips leading and duplicate slashes', () => {
+    expect(normalizePath('/photos//2024/')).toBe('photos/2024');
   });
 
   it('strips trailing slashes', () => {
