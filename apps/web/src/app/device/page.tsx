@@ -1,8 +1,10 @@
 import { redirect } from 'next/navigation';
-import { and, eq, isNull } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { getDb } from '#/db/client';
-import { deviceAuthRequests, users } from '#/db/schema';
+import { users } from '#/db/schema';
 import { getSessionUserId } from '#/lib/session';
+import { normalizeUserCode } from '#/lib/user-code';
+import { findPendingRequest } from '#/lib/device-auth';
 import { AppNav } from '#/components/shared/app-nav';
 import { PageHeader } from '#/components/shared/page-header';
 import { RequestDetails } from './_components/request-details';
@@ -22,19 +24,12 @@ export default async function DevicePage({
   const userId = await getSessionUserId();
   if (!userId) redirect('/login?next=/device');
   const db = getDb();
-  const { user_code: userCode, error } = await searchParams;
+  const { user_code: rawCode, error } = await searchParams;
+  const userCode = rawCode ? normalizeUserCode(rawCode) : undefined;
 
   const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
 
-  const pending = userCode
-    ? await db.query.deviceAuthRequests.findFirst({
-        where: and(
-          eq(deviceAuthRequests.userCode, userCode),
-          eq(deviceAuthRequests.status, 'pending'),
-          isNull(deviceAuthRequests.userId),
-        ),
-      })
-    : undefined;
+  const pending = userCode ? await findPendingRequest(db, userCode) : undefined;
 
   return (
     <>
