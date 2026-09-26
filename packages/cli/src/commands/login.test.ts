@@ -67,15 +67,32 @@ describe('loginCommand', () => {
 
 describe('logoutCommand', () => {
   it('revokes the device and clears local state', async () => {
+    mocks.runLogout.mockResolvedValue('');
+
     await logoutCommand.parseAsync([], { from: 'user' });
 
     expect(mocks.runLogout).toHaveBeenCalled();
     expect(mocks.clearCache).toHaveBeenCalled();
-    expect(output()).toContain('Signed out');
+    expect(output()).toContain('Signed out.');
+    expect(process.exitCode ?? 0).toBe(0);
+  });
+
+  it('says so when the server could not revoke the device', async () => {
+    mocks.runLogout.mockResolvedValue('fetch failed');
+
+    await logoutCommand.parseAsync([], { from: 'user' });
+
+    expect(output()).toContain('Signed out on this machine only.');
+    expect(output()).toContain('fetch failed');
+    expect(output()).toContain('drive.astexlabs.com/devices');
+    // A machine the user believes they revoked must not exit successfully.
+    expect(process.exitCode).toBe(1);
+    process.exitCode = 0;
   });
 
   it('mentions activity events it could not deliver', async () => {
     mocks.pendingCount.mockResolvedValue(3);
+    mocks.runLogout.mockResolvedValue('');
 
     await logoutCommand.parseAsync([], { from: 'user' });
 
