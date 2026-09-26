@@ -20,13 +20,23 @@ export async function PATCH(request: Request, { params }: Params) {
 
     await requireOwnedDevice(db, userId, id);
 
-    const updated = await db
-      .update(devices)
-      .set({ name: parsed.data.name })
-      .where(and(eq(devices.id, id), eq(devices.userId, userId)))
-      .returning({ name: devices.name });
+    // The duplicate name is enforced by a unique index, so it has to be caught
+    // rather than checked, or the driver error surfaces as a 500.
+    let updated: { name: string }[];
+    try {
+      updated = await db
+        .update(devices)
+        .set({ name: parsed.data.name })
+        .where(and(eq(devices.id, id), eq(devices.userId, userId)))
+        .returning({ name: devices.name });
+    } catch (error) {
+      if ((error as { code?: string }).code === '23505') {
+        throw new ApiError('That name is already taken', 409);
+      }
+      throw error;
+    }
 
-    if (updated.length === 0) throw new ApiError('That name is already taken', 409);
+    if (updated.length === 0) throw new ApiError('No such device', 404);
     return securityHeaders(Response.json({ name: updated[0].name }));
   } catch (error) {
     return securityHeaders(toApiError(error));
