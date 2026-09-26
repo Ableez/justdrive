@@ -1,51 +1,27 @@
 import { Command } from 'commander';
-import { DRIVE_SCOPE } from '@juststore/shared';
-import { loadAuth, saveAuth } from '../auth/tokens.js';
-import { describeError } from '../auth/errors.js';
-import { loadConfig } from '../drive/cache.js';
-import { fetchAccountEmail, getAuthenticatedClient } from '../drive/client.js';
 import chalk from 'chalk';
+import { fetchDriveToken, requireSession } from '../api/client.js';
+import { flush, pendingCount } from '../logger/outbox.js';
 
 export const statusCommand = new Command('status')
-  .description('Show current status')
+  .description('Show the current session and server reachability')
   .action(async () => {
+    const session = await requireSession();
+    console.log(`Machine: ${session.deviceName}`);
+    if (session.email) console.log(`Account: ${session.email}`);
+    console.log(`Server: ${session.apiUrl}`);
+
+    const pending = await pendingCount();
+    if (pending > 0) {
+      console.log(chalk.yellow(`${pending} activity events waiting to sync.`));
+    }
+
     try {
-      const auth = await loadAuth();
-
-      if (!auth) {
-        console.log(chalk.red('Not authenticated. Run: justdrive auth login'));
-        return;
-      }
-
-      // Access tokens expire hourly and are refreshed automatically, so the
-      // only meaningful check is whether Google still accepts the login.
-      let email = auth.email ?? null;
-      try {
-        email = (await fetchAccountEmail(await getAuthenticatedClient())) ?? email;
-        console.log(chalk.green('Authenticated'));
-      } catch (error) {
-        console.log(chalk.red('Session invalid: ') + describeError(error));
-        return;
-      }
-
-      if (email && email !== auth.email) {
-        const latest = (await loadAuth()) ?? auth;
-        await saveAuth({ ...latest, email });
-      }
-      if (email) console.log(`User: ${email}`);
-
-      const fullAccess = auth.scopes.includes(DRIVE_SCOPE);
-      console.log(`Access: ${fullAccess ? 'entire Google Drive' : 'files created by justdrive'}`);
-      if (!auth.tokens.refresh_token) {
-        console.log(chalk.yellow('No refresh token saved; you will need to log in again when this session expires.'));
-      }
-
-      const config = await loadConfig();
-      if (config.rootFolderId) {
-        console.log(`Root folder ID: ${config.rootFolderId}`);
-      }
+      const token = await fetchDriveToken();
+      const minutes = Math.max(0, Math.round((token.expiry_date - Date.now()) / 60000));
+      console.log(chalk.green(`Drive reachable. Google token good for ${minutes} min.`));
+      await flush().catch(() => {});
     } catch (error) {
-      console.error('Status check failed:', describeError(error));
-      process.exit(1);
+      console.log(chalk.red(`Drive unavailable: ${(error as Error).message}`));
     }
   });
