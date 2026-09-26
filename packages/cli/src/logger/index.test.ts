@@ -59,4 +59,19 @@ describe('logActivity', () => {
 
     expect(await pendingCount()).toBe(1);
   });
+
+  it('never rejects when the queue cannot be written to disk', async () => {
+    // The file operation has already gone to Drive, so a local failure must
+    // not surface as a failed upload.
+    await fs.writeFile(path.join(home, 'outbox.json'), 'corrupt');
+    await fs.chmod(home, 0o500);
+
+    try {
+      await expect(
+        logActivity({ operation: 'upload', path: 'a.txt', status: 'success' }),
+      ).resolves.toBeUndefined();
+    } finally {
+      await fs.chmod(home, 0o700);
+    }
+  });
 });
