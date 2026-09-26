@@ -1,11 +1,27 @@
-import { DEVICE_CODE_POLL_INTERVAL_SECONDS } from './constants';
+import { baseUrl } from './env';
 
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
+function allowedHosts(): Set<string> {
+  const hosts = new Set<string>();
+  try {
+    hosts.add(new URL(baseUrl()).host);
+  } catch {
+    // A malformed base URL leaves only the loopback defaults below.
+  }
+  // Local development and `justdrive` on the same machine.
+  hosts.add('localhost:3000');
+  hosts.add('127.0.0.1:3000');
+  return hosts;
+}
+
 /**
  * A same-origin check on every state-changing request. Browsers attach `Origin`
- * to all of these, and a form post from another site cannot forge it, which is
- * what stops a third-party page from approving a device or deleting an account.
+ * to all of these, and a cross-site form post cannot forge it.
+ *
+ * The host is compared against the configured app host rather than
+ * `request.url`, because Next builds that from its own bind hostname on some
+ * deployments and from the Host header on others.
  */
 export function isSameOrigin(request: Request): boolean {
   if (!UNSAFE_METHODS.has(request.method.toUpperCase())) return true;
@@ -14,18 +30,24 @@ export function isSameOrigin(request: Request): boolean {
   if (!origin) return false;
 
   try {
-    return new URL(origin).host === new URL(request.url).host;
+    return allowedHosts().has(new URL(origin).host);
   } catch {
     return false;
   }
 }
 
 export function securityHeaders(response: Response): Response {
-  response.headers.set('X-Content-Type-Options', 'nosniff');
-  response.headers.set('X-Frame-Options', 'DENY');
-  response.headers.set('Referrer-Policy', 'no-referrer');
-  response.headers.set('Cross-Origin-Opener-Policy', 'same-origin');
-  response.headers.set(
+  // A response from Response.redirect() has immutable headers.
+  const mutable =
+    response.headers.get('location') && response.status >= 300 && response.status < 400
+      ? new Response(response.body, { status: response.status, headers: response.headers })
+      : response;
+
+  mutable.headers.set('X-Content-Type-Options', 'nosniff');
+  mutable.headers.set('X-Frame-Options', 'DENY');
+  mutable.headers.set('Referrer-Policy', 'no-referrer');
+  mutable.headers.set('Cross-Origin-Opener-Policy', 'same-origin');
+  mutable.headers.set(
     'Content-Security-Policy',
     [
       "default-src 'self'",
@@ -37,7 +59,5 @@ export function securityHeaders(response: Response): Response {
       "form-action 'self' https://accounts.google.com",
     ].join('; '),
   );
-  return response;
+  return mutable;
 }
-
-export const pollInterval = DEVICE_CODE_POLL_INTERVAL_SECONDS;
