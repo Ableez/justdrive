@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   createTransfer: vi.fn(),
   fetchTransfers: vi.fn(),
   uploadFile: vi.fn(),
+  ensureDirectory: vi.fn(),
   getFileById: vi.fn(),
   logActivity: vi.fn(),
   existsSync: vi.fn(),
@@ -17,7 +18,10 @@ vi.mock('../api/client.js', () => ({
   fetchTransfers: mocks.fetchTransfers,
 }));
 
-vi.mock('../drive/operations.js', () => ({ uploadFile: mocks.uploadFile }));
+vi.mock('../drive/operations.js', () => ({
+  uploadFile: mocks.uploadFile,
+  ensureDirectory: mocks.ensureDirectory,
+}));
 vi.mock('../drive/resolver.js', () => ({ getFileById: mocks.getFileById }));
 vi.mock('../drive/client.js', () => ({
   getDriveClient: async () => ({ files: { get: mocks.filesGet } }),
@@ -53,6 +57,7 @@ beforeEach(() => {
   vi.spyOn(console, 'log').mockImplementation(() => {});
   mocks.existsSync.mockReturnValue(true);
   mocks.fetchTransfers.mockResolvedValue([]);
+  mocks.ensureDirectory.mockResolvedValue('transfers_id');
   mocks.uploadFile.mockResolvedValue({ id: 'file-1', name: 'db.tar.gz', size: '2048' });
   mocks.createTransfer.mockResolvedValue({ id: 'transfer-1' });
   mocks.getFileById.mockResolvedValue({ id: 'file-1', name: 'db.tar.gz' });
@@ -63,7 +68,8 @@ describe('sendCommand', () => {
   it('uploads to Drive then registers the transfer', async () => {
     await sendCommand.parseAsync(['./db.tar.gz', '--to', 'vps-2'], { from: 'user' });
 
-    expect(mocks.uploadFile).toHaveBeenCalledWith('./db.tar.gz', 'transfers', 'db.tar.gz');
+    expect(mocks.ensureDirectory).toHaveBeenCalledWith('transfers');
+    expect(mocks.uploadFile).toHaveBeenCalledWith('./db.tar.gz', undefined, 'db.tar.gz', 'transfers_id');
     expect(mocks.createTransfer).toHaveBeenCalledWith({
       drive_file_id: 'file-1',
       name: 'db.tar.gz',

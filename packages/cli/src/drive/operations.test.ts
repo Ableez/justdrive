@@ -49,13 +49,14 @@ vi.mock('fs', async () => {
 import {
   createDirectory,
   downloadFile,
+  ensureDirectory,
   listFiles,
   moveFile,
   removeFile,
   shareFile,
   uploadFile,
 } from './operations.js';
-import { JustStoreError } from '@juststore/shared';
+import { JustStoreError, PathNotFoundError } from '@juststore/shared';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -142,6 +143,29 @@ describe('createDirectory', () => {
     expect(mocks.logActivity).toHaveBeenCalledWith(
       expect.objectContaining({ operation: 'mkdir', path: 'photos/2024' }),
     );
+  });
+});
+
+describe('ensureDirectory', () => {
+  it('returns the existing folder id', async () => {
+    await expect(ensureDirectory('transfers')).resolves.toBe('id:transfers');
+    expect(mocks.filesCreate).not.toHaveBeenCalled();
+  });
+
+  it('creates the folder the first time it is needed', async () => {
+    mocks.resolvePath.mockRejectedValueOnce(new PathNotFoundError('transfers'));
+    mocks.filesCreate.mockResolvedValue({ data: { id: 'new_id', name: 'transfers' } });
+
+    await expect(ensureDirectory('transfers')).resolves.toBe('new_id');
+    expect(mocks.filesCreate.mock.calls[0][0].requestBody).toMatchObject({
+      name: 'transfers',
+      mimeType: 'application/vnd.google-apps.folder',
+    });
+  });
+
+  it('does not swallow other failures', async () => {
+    mocks.resolvePath.mockRejectedValueOnce(new Error('rate limit'));
+    await expect(ensureDirectory('transfers')).rejects.toThrow('rate limit');
   });
 });
 
