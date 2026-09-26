@@ -1,10 +1,13 @@
 import { redirect } from 'next/navigation';
 import { desc, eq } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { getDb } from '#/db/client';
 import { devices, transfers, users } from '#/db/schema';
 import { getSessionUserId } from '#/lib/session';
 import { AppNav } from '#/components/shared/app-nav';
 import { PageHeader } from '#/components/shared/page-header';
+
+const toDevice = alias(devices, 'to_device');
 
 export default async function TransfersPage() {
   const userId = await getSessionUserId();
@@ -14,10 +17,10 @@ export default async function TransfersPage() {
   const [user, rows] = await Promise.all([
     db.query.users.findFirst({ where: eq(users.id, userId) }),
     db
-      .select({ transfer: transfers, from: devices.name, to: devices.name })
+      .select({ transfer: transfers, from: devices.name, to: toDevice.name })
       .from(transfers)
       .leftJoin(devices, eq(devices.id, transfers.fromDeviceId))
-      .leftJoin(devices, eq(devices.id, transfers.toDeviceId))
+      .leftJoin(toDevice, eq(toDevice.id, transfers.toDeviceId))
       .where(eq(transfers.userId, userId))
       .orderBy(desc(transfers.createdAt))
       .limit(100),
