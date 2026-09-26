@@ -21,6 +21,10 @@ export function rateLimit(
   const existing = buckets.get(key);
 
   if (!existing || existing.resetAt <= now) {
+    // Keys come from client-supplied addresses, so expired windows are dropped
+    // rather than left to accumulate for the life of the instance.
+    if (existing) buckets.delete(key);
+    if (buckets.size > 10_000) buckets.clear();
     buckets.set(key, { count: 1, resetAt: now + windowMs });
     return { allowed: true, retryAfterSeconds: 0 };
   }

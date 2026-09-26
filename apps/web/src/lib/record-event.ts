@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import type { Database } from '../db/client';
 import { events, type EventType } from '../db/schema';
 
+const INT4_MAX = 2_147_483_647;
+
 export interface ReportedEvent {
   id?: string;
   type: EventType;
@@ -18,6 +20,8 @@ export interface RecordContext {
   deviceId: string | null;
   ip: string | null;
 }
+
+const MAX_TIMESTAMP_DRIFT_MS = 30 * 86_400_000;
 
 /**
  * Client ids are accepted verbatim so a batch replayed after being offline
@@ -37,11 +41,11 @@ export async function recordEvents(
     type: event.type,
     path: event.path?.slice(0, 1024) ?? null,
     driveFileId: event.driveFileId?.slice(0, 128) ?? null,
-    bytes: typeof event.bytes === 'number' ? Math.trunc(event.bytes) : null,
+    bytes: typeof event.bytes === 'number' ? Math.min(Math.trunc(event.bytes), INT4_MAX) : null,
     status: event.status?.slice(0, 32) ?? null,
     detail: event.detail?.slice(0, 500) ?? null,
     ip: context.ip,
-    at: event.at ? new Date(event.at) : new Date(),
+    at: clampTimestamp(event.at),
   }));
 
   const inserted = await db
@@ -51,6 +55,18 @@ export async function recordEvents(
     .returning({ id: events.id });
 
   return inserted.length;
+}
+
+/**
+ * A reported time far from the server's is replaced, so a device cannot bury
+ * real history under future-dated rows in the activity feed.
+ */
+function clampTimestamp(value: string | undefined): Date {
+  const now = Date.now();
+  if (!value) return new Date(now);
+  const reported = new Date(value).getTime();
+  if (!Number.isFinite(reported)) return new Date(now);
+  return Math.abs(reported - now) <= MAX_TIMESTAMP_DRIFT_MS ? new Date(reported) : new Date(now);
 }
 
 export async function recordServerEvent(
