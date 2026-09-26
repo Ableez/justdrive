@@ -2,7 +2,7 @@ import { getDb } from '#/db/client';
 import { users } from '#/db/schema';
 import { eq } from 'drizzle-orm';
 import { requireDevice, toApiError } from '#/lib/api-guard';
-import { getAccessToken, GoogleError, ensureRootFolder } from '#/lib/google';
+import { getAccessTokenWithExpiry, GoogleError, ensureRootFolder } from '#/lib/google';
 import { rateLimit } from '#/lib/rate-limit';
 import { recordServerEvent } from '#/lib/record-event';
 import { securityHeaders } from '#/lib/request-security';
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const accessToken = await getAccessToken(db, device.userId);
+    const { accessToken, expiresAt } = await getAccessTokenWithExpiry(db, device.userId);
     const user = await db.query.users.findFirst({ where: eq(users.id, device.userId) });
     if (!user) return securityHeaders(jsonError('Account not found', 404));
 
@@ -35,15 +35,18 @@ export async function POST(request: Request) {
     return securityHeaders(
       Response.json({
         access_token: accessToken,
-        // Google's access tokens live one hour; the CLI refreshes a minute early.
-        expires_at: Date.now() + 3600_000,
-        expires_in: 3600,
+        // The real remaining life, not Google's nominal hour: a cached token
+        // can be handed over with seconds left.
+        expires_at: expiresAt.getTime(),
+        expires_in: Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000)),
         root_folder_id: rootFolderId,
         email: user.email,
       }),
     );
   } catch (error) {
-    if (error instanceof GoogleError) return securityHeaders(jsonError(error.message, 409));
+    if (error instanceof GoogleError) {
+      return securityHeaders(jsonError(error.message, error.status));
+    }
     return securityHeaders(toApiError(error));
   }
 }

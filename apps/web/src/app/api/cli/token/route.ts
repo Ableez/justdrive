@@ -4,6 +4,8 @@ import { pollDeviceAuthRequest } from '#/lib/device-auth';
 import { recordServerEvent } from '#/lib/record-event';
 import { securityHeaders } from '#/lib/request-security';
 import { tokenRequestSchema } from '#/lib/schemas';
+import { clientIp } from '#/lib/session';
+import { rateLimit } from '#/lib/rate-limit';
 import { DEVICE_ACCESS_TOKEN_TTL_SECONDS } from '#/lib/constants';
 
 function oauthError(error: string, extra: Record<string, unknown> = {}): Response {
@@ -13,6 +15,18 @@ function oauthError(error: string, extra: Record<string, unknown> = {}): Respons
 export async function POST(request: Request) {
   const parsed = tokenRequestSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return oauthError('invalid_request');
+
+  // The most expensive unauthenticated endpoint in the flow, and the only one
+  // with no back pressure of its own.
+  const limit = rateLimit(`token:${clientIp(request) ?? 'unknown'}`, 30);
+  if (!limit.allowed) {
+    return securityHeaders(
+      Response.json(
+        { error: 'slow_down', interval: limit.retryAfterSeconds },
+        { status: 429, headers: { 'Retry-After': String(limit.retryAfterSeconds) } },
+      ),
+    );
+  }
 
   const db = getDb();
 
