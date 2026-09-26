@@ -3,7 +3,13 @@ import { eq } from 'drizzle-orm';
 import { createTestDb } from '#/test/db';
 import { devices, deviceAuthRequests, users } from '#/db/schema';
 import type { Database } from '#/db/client';
-import { claimUserCode, createDeviceAuthRequest, denyUserCode, pollDeviceAuthRequest } from './device-auth';
+import {
+  claimUserCode,
+  createDeviceAuthRequest,
+  denyUserCode,
+  findPendingRequest,
+  pollDeviceAuthRequest,
+} from './device-auth';
 
 let db: Database;
 
@@ -90,5 +96,31 @@ describe('device authorization requests', () => {
     await expect(pollDeviceAuthRequest(db, meta.deviceCode)).resolves.toEqual({
       status: 'expired_token',
     });
+  });
+});
+
+describe('approved code consumption', () => {
+  it('only lets one approval mint tokens', async () => {
+    const meta = await createDeviceAuthRequest(db, 'https://drive.astexlabs.com', {});
+    await pollDeviceAuthRequest(db, meta.deviceCode);
+    await expect(claimUserCode(db, meta.userCode, 'user-1', 'vps-2', 'device-1')).resolves.toBe(true);
+
+    await expect(pollDeviceAuthRequest(db, meta.deviceCode)).resolves.toMatchObject({
+      status: 'approved',
+    });
+    await expect(pollDeviceAuthRequest(db, meta.deviceCode)).resolves.toEqual({
+      status: 'expired_token',
+    });
+  });
+
+  it('refuses to claim an expired code', async () => {
+    const meta = await createDeviceAuthRequest(db, 'https://drive.astexlabs.com', {});
+    await db
+      .update(deviceAuthRequests)
+      .set({ expiresAt: new Date(Date.now() - 1000) })
+      .where(eq(deviceAuthRequests.userCode, meta.userCode));
+
+    await expect(claimUserCode(db, meta.userCode, 'user-1', 'vps-2', 'device-1')).resolves.toBe(false);
+    await expect(findPendingRequest(db, meta.userCode)).resolves.toBeUndefined();
   });
 });

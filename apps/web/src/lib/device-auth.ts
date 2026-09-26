@@ -1,4 +1,4 @@
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, gt, isNull, lt } from 'drizzle-orm';
 import type { Database } from '../db/client';
 import { deviceAuthRequests } from '../db/schema';
 import { hashToken } from './crypto';
@@ -20,25 +20,46 @@ export async function createDeviceAuthRequest(
   meta: { hostname?: string; os?: string; cliVersion?: string; requestIp?: string },
 ): Promise<DeviceAuthRequestMeta> {
   const deviceCode = generateDeviceCode();
-  const userCode = generateUserCode();
   const expiresIn = DEVICE_CODE_TTL_SECONDS;
 
-  await db.insert(deviceAuthRequests).values({
-    deviceCodeHash: hashToken(deviceCode),
-    userCode,
-    expiresAt: new Date(Date.now() + expiresIn * 1000),
-    ...meta,
-  });
+  await pruneExpiredRequests(db);
 
-  const verificationUri = `${baseUrl}/device`;
-  return {
-    deviceCode,
-    userCode,
-    verificationUri,
-    verificationUriComplete: `${verificationUri}?user_code=${userCode}`,
-    expiresIn,
-    interval: DEVICE_CODE_POLL_INTERVAL_SECONDS,
-  };
+  // A user code is only unique, so a collision has to be retried rather than
+  // surfacing as a 500 to the machine waiting to sign in.
+  let userCode = generateUserCode();
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const inserted = await db
+      .insert(deviceAuthRequests)
+      .values({
+        deviceCodeHash: hashToken(deviceCode),
+        userCode,
+        expiresAt: new Date(Date.now() + expiresIn * 1000),
+        ...meta,
+      })
+      .onConflictDoNothing()
+      .returning({ userCode: deviceAuthRequests.userCode });
+
+    if (inserted.length > 0) {
+      const verificationUri = `${baseUrl}/device`;
+      return {
+        deviceCode,
+        userCode,
+        verificationUri,
+        verificationUriComplete: `${verificationUri}?user_code=${userCode}`,
+        expiresIn,
+        interval: DEVICE_CODE_POLL_INTERVAL_SECONDS,
+      };
+    }
+    userCode = generateUserCode();
+  }
+
+  throw new Error('Could not allocate a sign-in code. Try again.');
+}
+
+async function pruneExpiredRequests(db: Database): Promise<void> {
+  await db
+    .delete(deviceAuthRequests)
+    .where(lt(deviceAuthRequests.expiresAt, new Date(Date.now() - 3600_000)));
 }
 
 export type PollOutcome =
@@ -77,17 +98,35 @@ export async function pollDeviceAuthRequest(
       : { status: 'authorization_pending' };
   }
 
-  if (request.status === 'denied' || request.status === 'expired') {
-    return { status: 'access_denied' };
-  }
+  // 'expired' is only ever written when an approval is consumed below, so a
+  // code in that state has already handed out its one token pair.
+  if (request.status === 'expired') return { status: 'expired_token' };
+  if (request.status === 'denied') return { status: 'access_denied' };
 
-  if (!request.userId || !request.deviceId) {
-    return { status: 'access_denied' };
-  }
+  if (!request.userId || !request.deviceId) return { status: 'access_denied' };
+
+  // Consume the code on the first approval so it cannot mint a second set of
+  // tokens for as long as it lives.
+  const consumed = await db
+    .update(deviceAuthRequests)
+    .set({ status: 'expired' })
+    .where(
+      and(
+        eq(deviceAuthRequests.deviceCodeHash, hash),
+        eq(deviceAuthRequests.status, 'approved'),
+      ),
+    )
+    .returning({
+      deviceId: deviceAuthRequests.deviceId,
+      deviceName: deviceAuthRequests.deviceName,
+    });
+
+  if (consumed.length === 0) return { status: 'expired_token' };
+
   return {
     status: 'approved',
-    deviceId: request.deviceId,
-    deviceName: request.deviceName ?? 'device',
+    deviceId: consumed[0].deviceId!,
+    deviceName: consumed[0].deviceName ?? 'device',
     userId: request.userId,
   };
 }
@@ -107,6 +146,7 @@ export async function claimUserCode(
         eq(deviceAuthRequests.userCode, userCode),
         eq(deviceAuthRequests.status, 'pending'),
         isNull(deviceAuthRequests.userId),
+        gt(deviceAuthRequests.expiresAt, new Date()),
       ),
     )
     .returning({ id: deviceAuthRequests.deviceCodeHash });
@@ -136,6 +176,7 @@ export async function findPendingRequest(db: Database, userCode: string) {
       eq(deviceAuthRequests.userCode, userCode),
       eq(deviceAuthRequests.status, 'pending'),
       isNull(deviceAuthRequests.userId),
+      gt(deviceAuthRequests.expiresAt, new Date()),
     ),
   });
 }
