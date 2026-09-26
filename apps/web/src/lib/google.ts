@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Database } from '../db/client';
 import { googleConnections, users } from '../db/schema';
 import { open, seal } from './crypto';
@@ -16,8 +16,19 @@ const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 const REVOKE_ENDPOINT = 'https://oauth2.googleapis.com/revoke';
 const DRIVE_FILES_ENDPOINT = 'https://www.googleapis.com/drive/v3/files';
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
+// A stalled Google call inside the refresh transaction would hold the advisory
+// lock and the single pooled connection for as long as it stalled.
+const GOOGLE_TIMEOUT_MS = 10_000;
 
-export class GoogleError extends Error {}
+export class GoogleError extends Error {
+  constructor(
+    message: string,
+    readonly status = 502,
+  ) {
+    super(message);
+    this.name = 'GoogleError';
+  }
+}
 
 export interface SignInRequest {
   url: string;
@@ -60,11 +71,18 @@ async function postForm(url: string, body: Record<string, string>): Promise<Toke
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams(body),
+    signal: AbortSignal.timeout(GOOGLE_TIMEOUT_MS),
   });
 
   if (!response.ok) {
-    const detail = await response.text();
-    throw new GoogleError(`Google token request failed (${response.status}): ${detail.slice(0, 300)}`);
+    const detail = (await response.json().catch(() => null)) as { error_description?: string } | null;
+    if (response.status >= 500) {
+      throw new GoogleError('Google is not responding. Try again shortly.', 503);
+    }
+    if (detail?.error_description) {
+      throw new GoogleError('Google rejected the request. Reconnect Drive and try again.', 403);
+    }
+    throw new GoogleError('Google rejected the request. Reconnect Drive and try again.', 403);
   }
   return (await response.json()) as TokenResponse;
 }
@@ -94,6 +112,7 @@ export async function revokeToken(token: string): Promise<void> {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ token }),
+    signal: AbortSignal.timeout(GOOGLE_TIMEOUT_MS),
   });
 }
 
@@ -108,7 +127,7 @@ export function verifyIdToken(idToken: string, nonce: string): GoogleIdentity {
     throw new GoogleError('Google did not return an id_token');
   }
 
-  const claims = JSON.parse(Buffer.from(payloadPart, 'base64url').toString('utf8')) as {
+  let claims: {
     sub?: string;
     email?: string;
     email_verified?: boolean;
@@ -117,6 +136,11 @@ export function verifyIdToken(idToken: string, nonce: string): GoogleIdentity {
     aud?: string;
     exp?: number;
   };
+  try {
+    claims = JSON.parse(Buffer.from(payloadPart, 'base64url').toString('utf8'));
+  } catch {
+    throw new GoogleError('Sign-in response was not readable');
+  }
 
   if (claims.nonce !== nonce) throw new GoogleError('Sign-in response did not match this request');
   if (claims.iss !== 'https://accounts.google.com' && claims.iss !== 'accounts.google.com') {
@@ -137,19 +161,42 @@ export interface VendedToken {
 }
 
 export async function getAccessToken(db: Database, userId: string): Promise<string> {
+  return (await getAccessTokenWithExpiry(db, userId)).accessToken;
+}
+
+export async function getAccessTokenWithExpiry(
+  db: Database,
+  userId: string,
+): Promise<{ accessToken: string; expiresAt: Date }> {
   const connection = await db.query.googleConnections.findFirst({
     where: eq(googleConnections.userId, userId),
   });
   if (!connection || connection.status !== 'active') {
-    throw new GoogleError('Google Drive is not connected. Reconnect it on the justdrive website.');
+    throw new GoogleError('Google Drive is not connected. Reconnect it on the website.', 409);
   }
 
-  const cached = connection.accessTokenEnc && connection.accessTokenExpiresAt;
-  if (cached && connection.accessTokenExpiresAt!.getTime() - ACCESS_TOKEN_REFRESH_SKEW_MS > Date.now()) {
-    return open(connection.accessTokenEnc!, userId);
+  const fresh =
+    connection.accessTokenEnc &&
+    connection.accessTokenExpiresAt &&
+    connection.accessTokenExpiresAt.getTime() - ACCESS_TOKEN_REFRESH_SKEW_MS > Date.now();
+
+  if (fresh) {
+    return {
+      accessToken: open(connection.accessTokenEnc!, userId),
+      expiresAt: connection.accessTokenExpiresAt!,
+    };
   }
 
-  return refreshAndStore(db, userId, connection.refreshTokenEnc);
+  try {
+    return await refreshAndStore(db, userId, connection.refreshTokenEnc);
+  } catch (error) {
+    // Written outside the transaction, which rolls back anything done inside it.
+    await db
+      .update(googleConnections)
+      .set({ status: 'error', lastError: (error as Error).message.slice(0, 500) })
+      .where(eq(googleConnections.userId, userId));
+    throw error;
+  }
 }
 
 /**
@@ -161,35 +208,36 @@ async function refreshAndStore(
   db: Database,
   userId: string,
   encryptedRefreshToken: string,
-): Promise<string> {
+): Promise<{ accessToken: string; expiresAt: Date }> {
   const refreshToken = open(encryptedRefreshToken, userId);
 
-  return db.transaction(async (tx) => {    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${userId}))`);
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`set local lock_timeout = '5s'`);
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${userId}))`);
 
     const current = await tx.query.googleConnections.findFirst({
       where: eq(googleConnections.userId, userId),
     });
+    if (!current || current.status !== 'active') {
+      throw new GoogleError('Google Drive is not connected. Reconnect it on the website.', 409);
+    }
+
     if (
-      current?.accessTokenEnc &&
+      current.accessTokenEnc &&
       current.accessTokenExpiresAt &&
       current.accessTokenExpiresAt.getTime() - ACCESS_TOKEN_REFRESH_SKEW_MS > Date.now()
     ) {
-      return open(current.accessTokenEnc, userId);
+      return {
+        accessToken: open(current.accessTokenEnc, userId),
+        expiresAt: current.accessTokenExpiresAt,
+      };
     }
 
-    let tokens: TokenResponse;
-    try {
-      tokens = await refreshAccessToken(refreshToken);
-    } catch (error) {
-      await tx
-        .update(googleConnections)
-        .set({ status: 'error', lastError: (error as Error).message.slice(0, 500) })
-        .where(eq(googleConnections.userId, userId));
-      throw error;
-    }
-
+    const tokens = await refreshAccessToken(refreshToken);
     const expiresAt = new Date(Date.now() + tokens.expires_in * 1000);
-    await tx
+
+    // Guarded so a disconnect landing mid-refresh cannot be undone.
+    const updated = await tx
       .update(googleConnections)
       .set({
         accessTokenEnc: seal(tokens.access_token, userId),
@@ -198,9 +246,14 @@ async function refreshAndStore(
         lastError: null,
         status: 'active',
       })
-      .where(eq(googleConnections.userId, userId));
+      .where(and(eq(googleConnections.userId, userId), eq(googleConnections.status, 'active')))
+      .returning({ userId: googleConnections.userId });
 
-    return tokens.access_token;
+    if (updated.length === 0) {
+      throw new GoogleError('Google Drive was disconnected. Reconnect it on the website.', 409);
+    }
+
+    return { accessToken: tokens.access_token, expiresAt };
   });
 }
 
@@ -216,11 +269,17 @@ async function driveRequest(
       'Content-Type': 'application/json',
       ...(init.headers ?? {}),
     },
+    signal: AbortSignal.timeout(GOOGLE_TIMEOUT_MS),
   });
 
   if (!response.ok) {
-    const detail = await response.text();
-    throw new GoogleError(`Drive request failed (${response.status}): ${detail.slice(0, 300)}`);
+    const status = response.status === 404 ? 404 : 502;
+    throw new GoogleError(
+      response.status === 404
+        ? 'That folder no longer exists in Drive.'
+        : 'Drive is not responding. Try again shortly.',
+      status,
+    );
   }
   return (await response.json()) as Record<string, unknown>;
 }
@@ -233,23 +292,35 @@ export async function ensureRootFolder(
   const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
   if (user?.driveRootFolderId) return user.driveRootFolderId;
 
-  const listed = await driveRequest(
-    accessToken,
-    `?q=${encodeURIComponent(
-      `name='${ROOT_FOLDER_NAME}' and mimeType='${FOLDER_MIME}' and 'root' in parents and trashed=false`,
-    )}&fields=files(id)&spaces=drive`,
-  );
-  const files = listed.files as { id: string }[] | undefined;
-  const folderId =
-    files && files.length > 0
-      ? files[0].id
-      : ((await driveRequest(accessToken, '', {
-          method: 'POST',
-          body: JSON.stringify({ name: ROOT_FOLDER_NAME, mimeType: FOLDER_MIME }),
-        })).id as string);
+  // Without a lock two machines signing in together each create a juststore
+  // folder, and the last write to the column wins.
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${userId}))`);
 
-  await db.update(users).set({ driveRootFolderId: folderId }).where(eq(users.id, userId));
-  return folderId;
+    const current = await tx.query.users.findFirst({ where: eq(users.id, userId) });
+    if (current?.driveRootFolderId) return current.driveRootFolderId;
+
+    const listed = await driveRequest(
+      accessToken,
+      `?q=${encodeURIComponent(
+        `name='${ROOT_FOLDER_NAME}' and mimeType='${FOLDER_MIME}' and 'root' in parents and trashed=false`,
+      )}&fields=files(id)&spaces=drive`,
+    );
+    const files = listed.files as { id: string }[] | undefined;
+    const folderId =
+      files && files.length > 0
+        ? files[0].id
+        : ((await driveRequest(accessToken, '', {
+            method: 'POST',
+            body: JSON.stringify({ name: ROOT_FOLDER_NAME, mimeType: FOLDER_MIME }),
+          })).id as string);
+
+    await tx
+      .update(users)
+      .set({ driveRootFolderId: folderId })
+      .where(and(eq(users.id, userId), isNull(users.driveRootFolderId)));
+    return folderId;
+  });
 }
 
 export function hasScope(scopes: string[]): boolean {
