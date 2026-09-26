@@ -36,6 +36,12 @@ export async function setCachedPath(drivePath: string, fileId: string): Promise<
   await write(data);
 }
 
+export async function removeCachedPath(drivePath: string): Promise<void> {
+  const data = await read();
+  delete data.paths[drivePath];
+  await write(data);
+}
+
 /**
  * Drops every entry pointing at or below a removed or moved file: its path, its
  * descendants' paths, and segment keys under its id.
