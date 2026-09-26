@@ -48,11 +48,15 @@ export async function completeDeviceLogin(
   deviceCode: DeviceCodeResponse,
   options: LoginOptions,
 ): Promise<DeviceSession> {
-  const deadline = Date.now() + deviceCode.expires_in * 1000;
-  let intervalMs = deviceCode.interval * 1000;
+  // Validated and clamped, because a NaN interval turns the wait into a
+  // request flood against the user's own server.
+  const intervalMs = Math.max(1, Number(deviceCode.interval) || 5) * 1000;
+  const expiresIn = Number(deviceCode.expires_in) || 600;
+  const deadline = Date.now() + expiresIn * 1000;
+  let waitMs = intervalMs;
 
   while (Date.now() < deadline) {
-    await sleep(intervalMs);
+    await sleep(waitMs);
     const body = await pollToken(deviceCode.device_code);
 
     if (body.device && body.access_token) {
@@ -70,12 +74,12 @@ export async function completeDeviceLogin(
     }
 
     const error = body.error;
-    if (typeof error === 'string' && TERMINAL_ERRORS.has(error)) {
-      throw new Error(tokenErrorMessage(error));
-    }
     if (error === 'slow_down') {
-      // RFC 8628 asks the client to add five seconds per slow_down.
-      intervalMs += 5000;
+      waitMs += 5000;
+      continue;
+    }
+    if (typeof error === 'string' && error !== 'authorization_pending') {
+      throw new Error(tokenErrorMessage(error));
     }
   }
 
@@ -89,25 +93,50 @@ function tokenErrorMessage(error: string): string {
   return `Sign-in failed (${error}). Try again.`;
 }
 
-async function pollToken(
-  deviceCode: string,
-): Promise<Record<string, unknown> & { access_token?: string; refresh_token?: string; expires_in?: number; device?: { id: string; name: string }; error?: string }> {
+async function pollToken(deviceCode: string): Promise<PollResponse> {
   const response = await fetch(`${getApiUrl()}/api/cli/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ grant_type: 'device_code', device_code: deviceCode }),
   });
-  return (await response.json().catch(() => ({}))) as never;
+
+  // Distinguishing "the server is down" from "the user has not approved yet"
+  // matters, or the user is told to retry when nothing is wrong their end.
+  if (response.status >= 500) {
+    throw new Error(`The sign-in server is unavailable (${response.status}). Try again shortly.`);
+  }
+  if (response.status === 429) {
+    const retryAfter = Number(response.headers.get('retry-after'));
+    return { error: 'slow_down', interval: Number.isFinite(retryAfter) ? retryAfter : undefined };
+  }
+
+  return (await response.json().catch(() => ({}))) as PollResponse;
 }
 
-export async function runLogout(): Promise<void> {
-  const { revokeThisDevice } = await import('./client.js');  try {
+interface PollResponse {
+  access_token?: string;
+  refresh_token?: string;
+  expires_in?: number;
+  device?: { id: string; name: string };
+  error?: string;
+  interval?: number;
+}
+
+export async function runLogout(): Promise<string> {
+  const { revokeThisDevice } = await import('./client.js');
+  let warning: string | null = null;
+
+  try {
     await revokeThisDevice();
-  } catch {
-    // The server may already consider this device gone; local state must still clear.
+  } catch (error) {
+    // Local state is cleared either way, but the user asked to cut this machine
+    // off and must not be told that worked when the server never heard about it.
+    warning = (error as Error).message;
   }
+
   forgetSession();
   await clearSession();
+  return warning ?? '';
 }
 
 function sleep(ms: number): Promise<void> {
