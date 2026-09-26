@@ -7,14 +7,16 @@ import { seal } from '#/lib/crypto';
 import { DRIVE_FILE_SCOPE } from '#/lib/constants';
 import { exchangeCode, ensureRootFolder, GoogleError, verifyIdToken } from '#/lib/google';
 import { createWebSession } from '#/lib/session';
+import { baseUrl } from '#/lib/env';
 import { recordServerEvent } from '#/lib/record-event';
 
 const STATE_COOKIE = 'jd_oauth_state';
 const VERIFIER_COOKIE = 'jd_oauth_verifier';
 const NONCE_COOKIE = 'jd_oauth_nonce';
+const NEXT_COOKIE = 'jd_oauth_next';
 
 function fail(message: string): Response {
-  return Response.redirect(new URL(`/login?error=${encodeURIComponent(message)}`, process.env.JUSTDRIVE_BASE_URL ?? 'http://localhost:3000'));
+  return Response.redirect(new URL(`/login?error=${encodeURIComponent(message)}`, baseUrl()));
 }
 
 export async function GET(request: Request) {
@@ -29,7 +31,10 @@ export async function GET(request: Request) {
   const expectedState = store.get(STATE_COOKIE)?.value;
   const codeVerifier = store.get(VERIFIER_COOKIE)?.value;
   const nonce = store.get(NONCE_COOKIE)?.value;
-  for (const name of [STATE_COOKIE, VERIFIER_COOKIE, NONCE_COOKIE]) store.delete(name);
+  const next = store.get(NEXT_COOKIE)?.value ?? '/dashboard';
+  for (const name of [STATE_COOKIE, VERIFIER_COOKIE, NONCE_COOKIE, NEXT_COOKIE]) {
+    store.delete(name);
+  }
 
   if (!expectedState || expectedState !== returnedState) return fail('Sign-in request expired. Try again.');
   if (!codeVerifier || !nonce) return fail('Sign-in request expired. Try again.');
@@ -77,7 +82,7 @@ export async function GET(request: Request) {
     await createWebSession(db, userId, request);
     await recordServerEvent(db, { userId, deviceId: null, type: 'google_connected' });
 
-    return Response.redirect(new URL('/dashboard', url.origin));
+    return Response.redirect(new URL(next, baseUrl()));
   } catch (error) {
     if (error instanceof GoogleError) return fail(error.message);
     throw error;
