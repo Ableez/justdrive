@@ -10,7 +10,7 @@ import {
 import { formatTable } from '../output/table.js';
 import { withProgress } from '../output/progress.js';
 import { formatJson } from '../output/json.js';
-import { describeError } from '../auth/errors.js';
+import { describeError } from '../output/errors.js';
 
 export const filesCommand = new Command('files')
   .description('File operations');

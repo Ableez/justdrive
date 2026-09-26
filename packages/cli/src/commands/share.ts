@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { shareFile } from '../drive/operations.js';
-import { describeError } from '../auth/errors.js';
+import { describeError } from '../output/errors.js';
 
 export const shareCommand = new Command('share')
   .description('Share a file')
