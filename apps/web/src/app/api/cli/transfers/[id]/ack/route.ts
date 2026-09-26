@@ -1,9 +1,10 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, gt } from 'drizzle-orm';
 import { getDb } from '#/db/client';
 import { transfers } from '#/db/schema';
 import { ApiError, requireDevice, toApiError } from '#/lib/api-guard';
 import { recordServerEvent } from '#/lib/record-event';
 import { securityHeaders } from '#/lib/request-security';
+import { TRANSFER_TTL_HOURS } from '#/lib/constants';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -25,6 +26,7 @@ export async function POST(request: Request, { params }: Params) {
           eq(transfers.userId, device.userId),
           eq(transfers.toDeviceId, device.deviceId),
           eq(transfers.status, 'pending'),
+          gt(transfers.createdAt, new Date(Date.now() - TRANSFER_TTL_HOURS * 3600_000)),
         ),
       )
       .returning({ id: transfers.id, fromDeviceId: transfers.fromDeviceId });

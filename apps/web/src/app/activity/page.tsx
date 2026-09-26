@@ -1,7 +1,7 @@
 import { and, desc, eq, type SQL } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 import { getDb } from '#/db/client';
-import { devices, events, users, type EventType } from '#/db/schema';
+import { devices, events, eventType, users } from '#/db/schema';
 import { getSessionUserId } from '#/lib/session';
 import { AppNav } from '#/components/shared/app-nav';
 import { PageHeader } from '#/components/shared/page-header';
@@ -25,7 +25,10 @@ export default async function ActivityPage({
     .where(eq(devices.userId, userId));
 
   const filters: SQL[] = [eq(events.userId, userId)];
-  if (params.type) filters.push(eq(events.type, params.type as EventType));
+  // params.type comes straight off the query string, and an unknown value
+  // would make Postgres reject the whole cast.
+  const type = eventType.enumValues.find((value) => value === params.type);
+  if (type) filters.push(eq(events.type, type));
   if (params.device) filters.push(eq(events.deviceId, params.device));
 
   const [user, rows] = await Promise.all([
