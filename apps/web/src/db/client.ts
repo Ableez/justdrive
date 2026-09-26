@@ -6,10 +6,8 @@ import { schema } from './schema';
 export type Database = NodePgDatabase<typeof schema>;
 
 declare global {
-  // The dev server reloads modules; without this every reload leaks a pool.
-  // eslint-disable-next-line no-var
+  // The dev server reloads modules; without these every reload leaks a pool.
   var __justdrivePool: Pool | undefined;
-  // eslint-disable-next-line no-var
   var __justdriveDb: Database | undefined;
 }
 

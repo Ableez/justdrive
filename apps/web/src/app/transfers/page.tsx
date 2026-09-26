@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { and, desc, eq } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { getDb } from '#/db/client';
 import { devices, transfers, users } from '#/db/schema';
 import { getSessionUserId } from '#/lib/session';
