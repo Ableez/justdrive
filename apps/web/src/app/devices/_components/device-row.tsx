@@ -3,6 +3,14 @@
 import { useState } from 'react';
 import type { Device } from '#/db/schema';
 
+function describeFailure(response: Response): string | null {
+  if (response.status === 401 || response.status === 403) {
+    window.location.href = '/login';
+    return null;
+  }
+  return response.status === 409 ? 'Name already in use' : 'Could not save';
+}
+
 export function DeviceRow({ device }: { device: Device }) {
   const [name, setName] = useState(device.name);
   const [busy, setBusy] = useState(false);
@@ -11,22 +19,39 @@ export function DeviceRow({ device }: { device: Device }) {
   async function rename() {
     setBusy(true);
     setMessage(null);
-    const response = await fetch(`/api/devices/${device.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }),
-    });
-    setBusy(false);
-    setMessage(response.ok ? 'Saved' : 'Name unavailable');
+    try {
+      const response = await fetch(`/api/devices/${device.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      if (!response.ok) {
+        setMessage(describeFailure(response) ?? '');
+        return;
+      }
+      setMessage('Saved');
+    } catch {
+      setMessage('Network error');
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function revoke() {
     if (!confirm(`Revoke ${device.name}? It stops getting Drive access right away.`)) return;
     setBusy(true);
-    const response = await fetch(`/api/devices/${device.id}`, { method: 'DELETE' });
-    setBusy(false);
-    if (response.ok) location.reload();
-    else setMessage('Could not revoke');
+    try {
+      const response = await fetch(`/api/devices/${device.id}`, { method: 'DELETE' });
+      if (response.ok) {
+        location.reload();
+        return;
+      }
+      setMessage(describeFailure(response) ?? '');
+    } catch {
+      setMessage('Network error');
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
