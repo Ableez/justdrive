@@ -5,6 +5,9 @@ vi.mock('../config/session.js', () => ({
   saveSession: vi.fn(),
 }));
 
+const mocks = vi.hoisted(() => ({ clearCache: vi.fn() }));
+vi.mock('../drive/cache.js', () => ({ clearCache: mocks.clearCache }));
+
 import { loadSession, saveSession } from '../config/session.js';
 import {
   ackTransfer,
@@ -37,6 +40,9 @@ function jsonResponse(body: unknown, status = 200) {
 beforeEach(() => {
   vi.clearAllMocks();
   forgetSession();
+  vi.mocked(saveSession).mockImplementation(async (next) => {
+    vi.mocked(loadSession).mockResolvedValue(next as never);
+  });
   vi.mocked(loadSession).mockResolvedValue(session);
   process.env.JUSTDRIVE_API_URL = 'https://drive.astexlabs.com';
 });
@@ -133,6 +139,55 @@ describe('drive token', () => {
     expect(fetchMock.mock.calls[2][1].headers.Authorization).toBe('Bearer jd_at_new');
   });
 
+  it('never writes back a token the server already spent', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ error: 'expired' }, 401))
+      .mockResolvedValueOnce(
+        jsonResponse({ access_token: 'jd_at_new', refresh_token: 'jd_rt_new', expires_in: 3600 }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ access_token: 'ya29.ok', expires_at: 2, root_folder_id: 'r', email: 'a@b.com' }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchDriveToken();
+
+    // The last write is the one that decides what the next command sends, so
+    // it must carry the rotated pair, not the pre-401 one.
+    const written = vi.mocked(saveSession).mock.calls.at(-1)![0] as { refreshToken: string };
+    expect(written.refreshToken).toBe('jd_rt_new');
+    await expect(loadSession()).resolves.toMatchObject({ refreshToken: 'jd_rt_new' });
+  });
+
+  it('clears cached folder ids when the server reports a new root', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({ access_token: 'ya29.x', expires_at: 1, root_folder_id: 'root-2' }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchDriveToken();
+
+    expect(mocks.clearCache).toHaveBeenCalled();
+  });
+
+  it('refreshes only once when several requests fail at the same time', async () => {
+    // Two concurrent 401s would present the same refresh token twice, and the
+    // server treats the replay as theft and revokes the device session.
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/api/cli/token')) {
+        return jsonResponse({ access_token: 'jd_at_new', refresh_token: 'jd_rt_new', expires_in: 3600 });
+      }
+      return jsonResponse({ error: 'expired' }, 401);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await Promise.allSettled([listDevices(), listDevices(), listDevices()]);
+
+    const refreshes = fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/cli/token'));
+    expect(refreshes).toHaveLength(1);
+  });
+
   it('surfaces the server message', async () => {
     vi.stubGlobal(
       'fetch',
@@ -140,6 +195,30 @@ describe('drive token', () => {
     );
 
     await expect(fetchDriveToken()).rejects.toThrow('Google Drive is not connected.');
+  });
+
+  it('does not turn a non-JSON error body into a parse error', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response('<html><body>Bad Gateway</body></html>', { status: 502 })),
+    );
+
+    // A proxy error page must not become a SyntaxError quoting raw HTML.
+    await expect(listDevices()).rejects.toThrow('Request failed (502)');
+  });
+
+  it('refuses to persist a refresh response with no access token', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn()
+        .mockResolvedValueOnce(jsonResponse({ error: 'expired' }, 401))
+        .mockResolvedValue(jsonResponse({ ok: true })),
+    );
+
+    // Writing this out would save a session with no access token, which bricks
+    // the credentials file for every later command.
+    await expect(listDevices()).rejects.toThrow(/did not return a session token/);
+    expect(saveSession).not.toHaveBeenCalled();
   });
 
   it('gives up after one retry instead of looping', async () => {

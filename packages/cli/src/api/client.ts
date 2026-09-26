@@ -1,5 +1,6 @@
 import { AuthError } from '@juststore/shared';
 import { loadSession, saveSession, type DeviceSession } from '../config/session.js';
+import { clearCache } from '../drive/cache.js';
 
 const DEFAULT_API_URL = 'https://drive.astexlabs.com';
 
@@ -33,7 +34,9 @@ export function forgetSession(): void {
   cachedSession = null;
 }
 
-export async function refreshSession(): Promise<DeviceSession> {
+let inflightRefresh: Promise<DeviceSession> | null = null;
+
+async function performRefresh(): Promise<DeviceSession> {
   const session = await requireSession();
   const response = await fetch(`${getApiUrl()}/api/cli/token`, {
     method: 'POST',
@@ -48,19 +51,41 @@ export async function refreshSession(): Promise<DeviceSession> {
       typeof body.error === 'string' ? body.error : 'Your session expired. Run: justdrive login',
     );
   }
+  if (typeof body.access_token !== 'string' || !body.access_token) {
+    throw new ApiError('The server did not return a session token.', 502);
+  }
 
   const updated: DeviceSession = {
     ...session,
-    accessToken: body.access_token as string,
+    accessToken: body.access_token,
     accessExpiresAt: Date.now() + Number(body.expires_in ?? 3600) * 1000,
-    refreshToken: (body.refresh_token as string) ?? session.refreshToken,
+    refreshToken:
+      typeof body.refresh_token === 'string' && body.refresh_token
+        ? body.refresh_token
+        : session.refreshToken,
   };
   cachedSession = updated;
   await saveSession(updated);
   return updated;
 }
 
-async function request<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
+/**
+ * Single-flight on purpose: the server treats a replayed refresh token as
+ * theft and revokes the whole family, so two overlapping 401s must not both
+ * present the same token.
+ */
+export function refreshSession(): Promise<DeviceSession> {
+  inflightRefresh ??= performRefresh().finally(() => {
+    inflightRefresh = null;
+  });
+  return inflightRefresh;
+}
+
+export async function request<T>(
+  path: string,
+  init: RequestInit = {},
+  retry = true,
+): Promise<T> {
   const session = await requireSession();
   const response = await fetch(`${getApiUrl()}${path}`, {
     ...init,
@@ -77,7 +102,12 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
   }
 
   const text = await response.text();
-  const body = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+  let body: Record<string, unknown> = {};
+  try {
+    body = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+  } catch {
+    // A proxy or gateway error page, which must not become a parse error.
+  }
 
   if (!response.ok) {
     throw new ApiError(
@@ -99,7 +129,6 @@ export interface DriveToken {
  * being rediscovered by each machine.
  */
 export async function fetchDriveToken(): Promise<DriveToken> {
-  const session = await requireSession();
   const token = await request<{
     access_token: string;
     expires_at: number;
@@ -107,13 +136,18 @@ export async function fetchDriveToken(): Promise<DriveToken> {
     email?: string;
   }>('/api/cli/drive-token', { method: 'POST' });
 
-  if (session.rootFolderId !== token.root_folder_id || session.email !== token.email) {
+  // Read after the request, not before: the request may have rotated the
+  // session, and writing back a pre-rotation copy would restore a spent
+  // refresh token and get the family revoked on the next command.
+  const current = await requireSession();
+  if (current.rootFolderId !== token.root_folder_id || current.email !== token.email) {
     const updated = {
-      ...session,
+      ...current,
       rootFolderId: token.root_folder_id,
-      email: token.email ?? session.email,
+      email: token.email ?? current.email,
     };
     cachedSession = updated;
+    await clearCache();
     await saveSession(updated);
   }
   return { access_token: token.access_token, expiry_date: token.expires_at };
