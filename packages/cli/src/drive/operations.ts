@@ -2,7 +2,13 @@ import { drive_v3 } from 'googleapis';
 import fs from 'fs';
 import path from 'path';
 import { pipeline } from 'stream/promises';
-import { DriveFile, DRIVE_FIELDS, JustStoreError, normalizePath } from '@juststore/shared';
+import {
+  DriveFile,
+  DRIVE_FIELDS,
+  JustStoreError,
+  PathNotFoundError,
+  normalizePath,
+} from '@juststore/shared';
 import { getDriveClient } from './client.js';
 import { resolvePath } from './resolver.js';
 import { invalidateCachedPath } from './cache.js';
@@ -29,10 +35,11 @@ export async function uploadFile(
   localPath: string,
   drivePath?: string,
   name?: string,
+  resolvedParentId?: string,
 ): Promise<DriveFile> {
   const drive = await getDriveClient();
   const fileName = name || path.basename(localPath);
-  const parentId = await resolvePath(drivePath ?? '');
+  const parentId = resolvedParentId ?? (await resolvePath(drivePath ?? ''));
 
   const response = await drive.files.create({
     requestBody: {
@@ -87,6 +94,16 @@ export async function downloadFile(
     status: 'success',
   });
   return destPath;
+}
+
+export async function ensureDirectory(drivePath: string): Promise<string> {
+  try {
+    return await resolvePath(drivePath);
+  } catch (error) {
+    if (!(error instanceof PathNotFoundError)) throw error;
+    const created = await createDirectory(drivePath);
+    return created.id;
+  }
 }
 
 export async function createDirectory(drivePath: string): Promise<DriveFile> {

@@ -2,10 +2,11 @@ import { Command } from 'commander';
 import path from 'path';
 import fs from 'fs';
 import chalk from 'chalk';
+import { TRANSFOLDER_FOLDER } from '@juststore/shared';
 import { ackTransfer, createTransfer, fetchTransfers } from '../api/client.js';
 import { getDriveClient } from '../drive/client.js';
 import { getFileById } from '../drive/resolver.js';
-import { uploadFile } from '../drive/operations.js';
+import { ensureDirectory, uploadFile } from '../drive/operations.js';
 import { formatRows } from '../output/table.js';
 import { logActivity } from '../logger/index.js';
 
@@ -22,7 +23,8 @@ export const sendCommand = new Command('send')
 
     // The bytes go straight to Drive; the server only records who should pick
     // them up.
-    const uploaded = await uploadFile(file, 'transfers', path.basename(file));
+    const parentId = await ensureDirectory(TRANSFOLDER_FOLDER);
+    const uploaded = await uploadFile(file, undefined, path.basename(file), parentId);
     const transfer = await createTransfer({
       drive_file_id: uploaded.id,
       name: uploaded.name,
@@ -32,7 +34,7 @@ export const sendCommand = new Command('send')
 
     await logActivity({
       operation: 'send',
-      path: `transfers/${uploaded.name}`,
+      path: `${TRANSFOLDER_FOLDER}/${uploaded.name}`,
       driveFileId: uploaded.id,
       bytes: Number(uploaded.size) || undefined,
       status: 'success',
