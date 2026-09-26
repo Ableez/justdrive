@@ -1,6 +1,6 @@
 # justdrive cloud: plan
 
-**Status:** draft for review · **Date:** 2026-09-26
+**Status:** implemented · **Date:** 2026-09-26
 **Web app:** `https://drive.astexlabs.com` (Next.js, `apps/web`) · **CLI:** `justdrive` (`packages/cli`)
 
 ## 1. Goal
