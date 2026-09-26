@@ -95,6 +95,27 @@ describe('device tokens', () => {
     await expect(verifyAccessToken(db, rotated.tokens.accessToken)).resolves.not.toBeNull();
   });
 
+  it('lets only one of two concurrent rotations win', async () => {
+    const { deviceId } = await seedDevice();
+    const first = await issueTokenPair(db, deviceId);
+
+    // A thief racing the real client must not be able to launder the token by
+    // arriving at the same moment.
+    const results = await Promise.allSettled([
+      rotateRefreshToken(db, first.refreshToken),
+      rotateRefreshToken(db, first.refreshToken),
+    ]);
+
+    const fulfilled = results.filter((r) => r.status === 'fulfilled');
+    const rejected = results.filter((r) => r.status === 'rejected');
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected[0].reason).toMatchObject({ code: 'reuse' });
+
+    // The winner's tokens are dead too, because reuse revoked the family.
+    const winner = (fulfilled[0] as { value: { tokens: { accessToken: string } } }).value;
+    await expect(verifyAccessToken(db, winner.tokens.accessToken)).resolves.toBeNull();
+  });
+
   it('revokes the whole family when a spent token is replayed', async () => {
     const { userId, deviceId } = await seedDevice();
     const first = await issueTokenPair(db, deviceId);

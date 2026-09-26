@@ -102,6 +102,13 @@ export async function verifyAccessToken(
   };
 }
 
+function reusedTokenError(): DeviceTokenError {
+  return new DeviceTokenError(
+    'A spent device token was replayed, so this device session was revoked. Run: justdrive login',
+    'reuse',
+  );
+}
+
 export async function rotateRefreshToken(
   db: Database,
   presented: string,
@@ -128,16 +135,22 @@ export async function rotateRefreshToken(
 
   if (row.usedAt) {
     await revokeFamily(db, row.familyId ?? row.id);
-    throw new DeviceTokenError(
-      'A spent device token was replayed, so this device session was revoked. Run: justdrive login',
-      'reuse',
-    );
+    throw reusedTokenError();
   }
 
-  await db
+  // The write is the gate, not the read above: two concurrent rotations of the
+  // same token must not both succeed, or a stolen token could race the real one
+  // and never trip reuse detection.
+  const claimed = await db
     .update(deviceTokens)
     .set({ usedAt: new Date() })
-    .where(eq(deviceTokens.id, row.id));
+    .where(and(eq(deviceTokens.id, row.id), isNull(deviceTokens.usedAt)))
+    .returning({ id: deviceTokens.id });
+
+  if (claimed.length === 0) {
+    await revokeFamily(db, row.familyId ?? row.id);
+    throw reusedTokenError();
+  }
 
   const tokens = await issueTokenPair(db, row.deviceId, row.familyId ?? row.id);
 
