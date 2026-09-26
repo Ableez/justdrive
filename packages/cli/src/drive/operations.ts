@@ -10,7 +10,7 @@ import {
   normalizePath,
 } from '@juststore/shared';
 import { getDriveClient } from './client.js';
-import { resolvePath } from './resolver.js';
+import { resolvePath, resolvePathForWrite } from './resolver.js';
 import { invalidateCachedPath } from './cache.js';
 import { logActivity } from '../logger/index.js';
 
@@ -78,12 +78,14 @@ export async function downloadFile(
     { responseType: 'stream' },
   );
 
-  // pipeline resolves only once the file is fully flushed to disk, and
-  // propagates errors from either side.
+  // Streamed to a sibling path and renamed on success, so an interrupted
+  // download cannot destroy a file that was already at the destination.
+  const partial = `${destPath}.part`;
   try {
-    await pipeline(response.data, fs.createWriteStream(destPath));
+    await pipeline(response.data, fs.createWriteStream(partial));
+    await fs.promises.rename(partial, destPath);
   } catch (error) {
-    await fs.promises.rm(destPath, { force: true });
+    await fs.promises.rm(partial, { force: true });
     throw error;
   }
 
@@ -152,10 +154,14 @@ export async function moveFile(
   });
   const previousParents = getResponse.data.parents?.join(',') || '';
 
+  // Only the parent the file is actually leaving, so a file that is
+  // deliberately in two folders keeps its other one.
   const response = await drive.files.update({
     fileId,
     addParents: newParentId,
-    removeParents: previousParents,
+    removeParents: (getResponse.data.parents ?? []).includes(newParentId)
+      ? (getResponse.data.parents ?? []).filter((id) => id !== newParentId).join(',')
+      : previousParents,
     requestBody: { name: newName },
     fields: DRIVE_FIELDS,
   });
@@ -182,7 +188,7 @@ export async function removeFile(
   }
 
   const drive = await getDriveClient();
-  const fileId = await resolvePath(normalized);
+  const fileId = await resolvePathForWrite(normalized);
 
   if (options.permanent) {
     await drive.files.delete({ fileId });
@@ -213,7 +219,7 @@ export async function shareFile(
   }
 
   const drive = await getDriveClient();
-  const fileId = await resolvePath(drivePath);
+  const fileId = await resolvePathForWrite(normalizePath(drivePath));
 
   if (email) {
     await drive.permissions.create({

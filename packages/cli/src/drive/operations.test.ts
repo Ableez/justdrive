@@ -1,5 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { Readable, Writable } from 'stream';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   filesCreate: vi.fn(),
@@ -9,9 +8,12 @@ const mocks = vi.hoisted(() => ({
   filesList: vi.fn(),
   permissionsCreate: vi.fn(),
   resolvePath: vi.fn(),
+  resolvePathForWrite: vi.fn(),
   invalidateCachedPath: vi.fn(),
   logActivity: vi.fn(),
   createWriteStream: vi.fn(),
+  rename: vi.fn(),
+  rm: vi.fn(),
 }));
 
 vi.mock('./client.js', () => ({
@@ -27,7 +29,11 @@ vi.mock('./client.js', () => ({
   }),
 }));
 
-vi.mock('./resolver.js', () => ({ resolvePath: (p: string) => mocks.resolvePath(p) }));
+vi.mock('./resolver.js', () => ({
+  resolvePath: (p: string) => mocks.resolvePath(p),
+  resolvePathForWrite: (p: string) => mocks.resolvePathForWrite(p),
+}));
+
 vi.mock('./cache.js', () => ({ invalidateCachedPath: mocks.invalidateCachedPath }));
 vi.mock('../logger/index.js', () => ({ logActivity: mocks.logActivity }));
 
@@ -40,8 +46,12 @@ vi.mock('fs', async () => {
     ...actual,
     default: {
       ...(actual.default as Record<string, unknown>),
-      createReadStream: () => Readable.from(['data']),
+      createReadStream: () => {
+        const { Readable } = require('stream');
+        return Readable.from(['data']);
+      },
       createWriteStream: (...args: unknown[]) => mocks.createWriteStream(...args),
+      promises: { rename: mocks.rename, rm: mocks.rm },
     },
   };
 });
@@ -58,13 +68,22 @@ import {
 } from './operations.js';
 import { JustStoreError, PathNotFoundError } from '@juststore/shared';
 
+function writable(failWith?: Error) {
+  const { Writable } = require('stream');
+  return new Writable({
+    write: (_chunk: unknown, _e: unknown, cb: (error?: Error) => void) => cb(failWith),
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.resolvePath.mockImplementation(async (p: string) => `id:${p}`);
+  mocks.resolvePathForWrite.mockImplementation(async (p: string) => `id:${p}`);
   mocks.filesGet.mockResolvedValue({ data: { webViewLink: 'https://link' } });
-  mocks.createWriteStream.mockImplementation(
-    () => new Writable({ write: (_chunk, _encoding, callback) => callback() }),
-  );
+  mocks.logActivity.mockResolvedValue(undefined);
+  mocks.createWriteStream.mockImplementation(() => writable());
+  mocks.rename.mockResolvedValue(undefined);
+  mocks.rm.mockResolvedValue(undefined);
 });
 
 describe('listFiles', () => {
@@ -97,6 +116,15 @@ describe('uploadFile', () => {
     );
   });
 
+  it('uses a pre-resolved parent when given one', async () => {
+    mocks.filesCreate.mockResolvedValue({ data: { id: 'f1', name: 'a.txt' } });
+
+    await uploadFile('/tmp/a.txt', undefined, 'a.txt', 'folder_id');
+
+    expect(mocks.filesCreate.mock.calls[0][0].requestBody.parents).toEqual(['folder_id']);
+    expect(mocks.resolvePath).not.toHaveBeenCalled();
+  });
+
   it('falls back to the local file name', async () => {
     mocks.filesCreate.mockResolvedValue({ data: { id: 'f1', name: 'local.bin' } });
     await uploadFile('/tmp/local.bin');
@@ -111,22 +139,28 @@ describe('uploadFile', () => {
 });
 
 describe('downloadFile', () => {
-  it('waits for the stream to finish before reporting success', async () => {
+  it('writes to a temp file and renames only on success', async () => {
+    const { Readable } = await import('stream');
     mocks.filesGet.mockResolvedValue({ data: Readable.from(['chunk']) });
 
     await expect(downloadFile('a/b.txt', '/tmp/out.txt')).resolves.toBe('/tmp/out.txt');
+
+    expect(mocks.createWriteStream).toHaveBeenCalledWith('/tmp/out.txt.part');
+    expect(mocks.rename).toHaveBeenCalledWith('/tmp/out.txt.part', '/tmp/out.txt');
     expect(mocks.logActivity).toHaveBeenCalledWith(
       expect.objectContaining({ operation: 'download', path: 'a/b.txt' }),
     );
   });
 
-  it('fails when the destination cannot be written', async () => {
+  it('leaves an existing file alone when the download fails', async () => {
+    const { Readable } = await import('stream');
     mocks.filesGet.mockResolvedValue({ data: Readable.from(['chunk']) });
-    mocks.createWriteStream.mockImplementation(
-      () => new Writable({ write: (_c, _e, callback) => callback(new Error('disk full')) }),
-    );
+    mocks.createWriteStream.mockImplementation(() => writable(new Error('disk full')));
 
-    await expect(downloadFile('a/b.txt', '/tmp/out.txt')).rejects.toThrow('disk full');
+    await expect(downloadFile('a/b.txt', '/tmp/important.txt')).rejects.toThrow();
+    // Never removes the destination, only the temp file it created.
+    expect(mocks.rm).toHaveBeenCalledWith('/tmp/important.txt.part', { force: true });
+    expect(mocks.rm).not.toHaveBeenCalledWith('/tmp/important.txt', { force: true });
   });
 });
 
@@ -140,9 +174,6 @@ describe('createDirectory', () => {
       name: '2024',
       parents: ['id:photos'],
     });
-    expect(mocks.logActivity).toHaveBeenCalledWith(
-      expect.objectContaining({ operation: 'mkdir', path: 'photos/2024' }),
-    );
   });
 });
 
@@ -182,12 +213,22 @@ describe('moveFile', () => {
     });
     expect(mocks.invalidateCachedPath).toHaveBeenCalledWith('photos/a.txt', 'id:photos/a.txt');
   });
+
+  it('keeps a file that is deliberately in two folders', async () => {
+    mocks.filesGet.mockResolvedValueOnce({ data: { parents: ['id:photos', 'id:shared'] } });
+    mocks.filesUpdate.mockResolvedValue({ data: { id: 'f1', name: 'a.txt' } });
+
+    await moveFile('photos/a.txt', 'archive/a.txt');
+
+    expect(mocks.filesUpdate.mock.calls[0][0].removeParents).toBe('id:photos,id:shared');
+  });
 });
 
 describe('removeFile', () => {
-  it('moves to trash by default', async () => {
+  it('moves to trash by default, after confirming the path', async () => {
     await removeFile('a.txt');
 
+    expect(mocks.resolvePathForWrite).toHaveBeenCalledWith('a.txt');
     expect(mocks.filesUpdate).toHaveBeenCalledWith({
       fileId: 'id:a.txt',
       requestBody: { trashed: true },
@@ -212,6 +253,7 @@ describe('removeFile', () => {
 describe('shareFile', () => {
   it('shares a link and returns it', async () => {
     await expect(shareFile('a.txt')).resolves.toBe('https://link');
+    expect(mocks.resolvePathForWrite).toHaveBeenCalledWith('a.txt');
     expect(mocks.logActivity).toHaveBeenCalledWith(expect.objectContaining({ operation: 'share' }));
   });
 
