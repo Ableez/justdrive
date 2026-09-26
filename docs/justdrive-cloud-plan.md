@@ -186,17 +186,31 @@ no longer ships any Google client credentials.
 
 ## 9. Milestones
 
-Each milestone ships with tests. M1–M3 together are the MVP.
+Each milestone ships with tests. M1–M5 together are the MVP.
 
-| # | Scope | Done when |
+| # | Scope | Status |
 |---|---|---|
-| **M0** | Pick hosting (Vercel assumed for `apps/web`), Postgres provider, migrations tool, secrets; set up the Google Cloud client and consent screen (Testing mode) | `apps/web` deploys to drive.astexlabs.com with an empty DB |
-| **M1** | Sign in with Google + Drive consent, encrypted token storage, root folder creation, web sessions | User signs in, sees profile with connected Google account |
-| **M2** | Device flow endpoints + `/device` approve page + devices page + revoke | `curl`-driven device login works; revoke blocks the token |
-| **M3** | `drive-token` vending + CLI rewrite (`login/logout/status`, `refreshHandler`, server root folder); delete local mode | Fresh VPS: `npx justdrive login` → `upload` → second VPS `download` works end to end |
-| **M4** | Events API + CLI reporting with offline queue + activity UI | History shows per-device operations and security events |
-| **M5** | `send / inbox / receive` + transfers UI | `send --to vps-2` shows up and downloads on vps-2 |
-| **M6** | Rate limits, security headers review, account deletion, privacy/terms pages, submit brand verification, switch to *In production*, publish CLI 0.2 | Any Google account can use it without warnings |
+| **M0** | Hosting, Postgres, migrations, schema | Done. Neon + Drizzle, 8 tables, migration `apps/web/drizzle`. |
+| **M1** | Google sign-in, encrypted tokens, root folder, web sessions | Done. AES-256-GCM with key versioning; `__Host-` cookie; Drive root owned by the server. |
+| **M2** | Device flow, approve page, devices page, revoke | Done. RFC 8628 codes, `slow_down` enforcement, per-request revocation check. |
+| **M3** | `drive-token` vending, CLI rewrite | Done. `refreshHandler` pulls Google tokens; local auth, local dashboard and the dashboard package are deleted. |
+| **M4** | Events API, offline queue, activity UI | Done. Client-generated ids make replay idempotent; the queue is local-first and never blocks a transfer. |
+| **M5** | `send / inbox / receive` + transfers UI | Done. Bytes go machine to Drive to machine; only metadata is registered. |
+| **M6** | Rate limits, account deletion, legal pages | Code done. **You still need to:** create the Web OAuth client, set the consent screen to *In production*, and submit brand verification. |
+
+### Setting the secrets
+
+```
+TOKEN_ENCRYPTION_KEYS   {"1":"<base64 32 bytes>"}   rotate by adding "2"
+GOOGLE_CLIENT_ID        from the Web application OAuth client
+GOOGLE_CLIENT_SECRET    from the same client
+JUSTDRIVE_BASE_URL      https://drive.astexlabs.com
+DATABASE_URL            pooled (runtime)
+DATABASE_URL_UNPOOLED   direct, used by drizzle-kit only
+```
+
+Add all of them to the Vercel project, not just `apps/web/.env.local`.
+
 
 ## 10. Known limitations and open questions
 
