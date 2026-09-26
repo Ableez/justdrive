@@ -1,16 +1,15 @@
 import type { OutboxEvent } from '../logger/outbox.js';
-import { requireSession } from './client.js';
+import { request } from './client.js';
 
+/**
+ * Sends a batch and reports how many the server stored. Replay is safe because
+ * every event carries a client-generated id.
+ */
 export async function sendEvents(events: OutboxEvent[]): Promise<number> {
   if (events.length === 0) return 0;
 
-  const session = await requireSession();
-  const response = await fetch(`${session.apiUrl.replace(/\/+$/, '')}/api/cli/events`, {
+  const body = await request<{ accepted: number }>('/api/cli/events', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${session.accessToken}`,
-    },
     body: JSON.stringify({
       events: events.map((event) => ({
         id: event.id,
@@ -25,7 +24,5 @@ export async function sendEvents(events: OutboxEvent[]): Promise<number> {
     }),
   });
 
-  if (!response.ok) throw new Error(`Event upload failed (${response.status})`);
-  const body = (await response.json()) as { accepted: number };
   return body.accepted;
 }

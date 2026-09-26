@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ requireSession: vi.fn() }));
-vi.mock('./client.js', () => ({ requireSession: mocks.requireSession }));
+vi.mock('../config/session.js', () => ({
+  loadSession: vi.fn(),
+  saveSession: vi.fn(),
+}));
 
+import { loadSession } from '../config/session.js';
+import { forgetSession } from './client.js';
 import { sendEvents } from './events.js';
 import type { OutboxEvent } from '../logger/outbox.js';
 
@@ -22,13 +26,21 @@ function jsonResponse(body: unknown, status = 200) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.requireSession.mockResolvedValue({
-    apiUrl: 'https://drive.astexlabs.com/',
+  forgetSession();
+  vi.mocked(loadSession).mockResolvedValue({
+    version: 1,
+    apiUrl: 'https://drive.astexlabs.com',
     accessToken: 'jd_at_a',
+    accessExpiresAt: Date.now() + 3_600_000,
+    refreshToken: 'jd_rt_a',
+    deviceId: 'd1',
+    deviceName: 'vps-1',
   });
+  process.env.JUSTDRIVE_API_URL = 'https://drive.astexlabs.com';
 });
 
 afterEach(() => {
+  delete process.env.JUSTDRIVE_API_URL;
   vi.unstubAllGlobals();
 });
 
@@ -63,9 +75,7 @@ describe('sendEvents', () => {
   });
 
   it('turns null for fields the event does not carry', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(jsonResponse({ accepted: 1 }));
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ accepted: 1 }));
     vi.stubGlobal('fetch', fetchMock);
 
     await sendEvents([{ id: 'x', type: 'rm', status: 'error', at: 'now' } as OutboxEvent]);
@@ -79,6 +89,16 @@ describe('sendEvents', () => {
 
   it('raises so the caller can keep the events queued', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 500 })));
-    await expect(sendEvents([event])).rejects.toThrow(/Event upload failed/);
+    await expect(sendEvents([event])).rejects.toThrow(/Request failed/);
+  });
+
+  it('goes to the live server url, not the one recorded at login', async () => {
+    process.env.JUSTDRIVE_API_URL = 'http://localhost:3000';
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ accepted: 1 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await sendEvents([event]);
+
+    expect(fetchMock.mock.calls[0][0]).toBe('http://localhost:3000/api/cli/events');
   });
 });
