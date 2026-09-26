@@ -16,6 +16,11 @@ export function sessionCookieName(): string {
 }
 
 export async function createWebSession(db: Database, userId: string, request: Request): Promise<void> {
+  // Signing in again must not leave the previous cookie's session alive, or a
+  // token captured from an earlier sign-in could not be revoked by signing out.
+  const previous = (await cookies()).get(sessionCookieName())?.value;
+  if (previous) await deleteSessionByToken(previous);
+
   const id = randomBytes(32).toString('base64url');
   await db.insert(webSessions).values({
     idHash: hashToken(id),
@@ -25,6 +30,10 @@ export async function createWebSession(db: Database, userId: string, request: Re
     userAgent: request.headers.get('user-agent')?.slice(0, 300) ?? null,
   });
 
+  await writeSessionCookie(id);
+}
+
+async function writeSessionCookie(id: string): Promise<void> {
   (await cookies()).set(sessionCookieName(), id, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
@@ -52,15 +61,17 @@ export async function getSessionUserId(): Promise<string | null> {
   });
   if (!session) return null;
 
-  const expiresAt =
-    session.expiresAt.getTime() - Date.now() < SLIDING_WINDOW_MS
-      ? new Date(Date.now() + TTL_MS)
-      : session.expiresAt;
+  const extended = session.expiresAt.getTime() - Date.now() < SLIDING_WINDOW_MS;
+  const expiresAt = extended ? new Date(Date.now() + TTL_MS) : session.expiresAt;
 
   await db
     .update(webSessions)
     .set({ lastSeenAt: new Date(), expiresAt })
     .where(eq(webSessions.idHash, session.idHash));
+
+  // Without re-issuing the cookie the browser still drops it at the original
+  // maxAge, and the row would outlive the cookie that it authorises.
+  if (extended) await writeSessionCookie(id);
 
   return session.userId;
 }
