@@ -21,6 +21,14 @@ export function formatTable(files: DriveFile[]): string {
   return table.toString();
 }
 
+export function formatRows(head: string[], rows: (string | number)[][]): string {
+  if (rows.length === 0) return 'Nothing to show.';
+
+  const table = new Table({ head });
+  for (const row of rows) table.push(row.map(String));
+  return table.toString();
+}
+
 function formatMimeType(mimeType: string): string {
   if (mimeType === 'application/vnd.google-apps.folder') return 'folder';
   const parts = mimeType.split('/');

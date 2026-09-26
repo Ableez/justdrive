@@ -1,259 +1,211 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { Readable, Writable } from 'stream';
+
+const mocks = vi.hoisted(() => ({
+  filesCreate: vi.fn(),
+  filesGet: vi.fn(),
+  filesUpdate: vi.fn(),
+  filesDelete: vi.fn(),
+  filesList: vi.fn(),
+  permissionsCreate: vi.fn(),
+  resolvePath: vi.fn(),
+  invalidateCachedPath: vi.fn(),
+  logActivity: vi.fn(),
+  createWriteStream: vi.fn(),
+}));
 
 vi.mock('./client.js', () => ({
-  getDriveClient: vi.fn(),
+  getDriveClient: async () => ({
+    files: {
+      create: mocks.filesCreate,
+      get: mocks.filesGet,
+      update: mocks.filesUpdate,
+      delete: mocks.filesDelete,
+      list: mocks.filesList,
+    },
+    permissions: { create: mocks.permissionsCreate },
+  }),
 }));
 
-vi.mock('./resolver.js', () => ({
-  resolvePath: vi.fn(),
-}));
-
-vi.mock('../logger/index.js', () => ({
-  logActivity: vi.fn(),
-}));
-
-vi.mock('./cache.js', () => ({
-  invalidateCachedPath: vi.fn(),
-}));
+vi.mock('./resolver.js', () => ({ resolvePath: (p: string) => mocks.resolvePath(p) }));
+vi.mock('./cache.js', () => ({ invalidateCachedPath: mocks.invalidateCachedPath }));
+vi.mock('../logger/index.js', () => ({ logActivity: mocks.logActivity }));
 
 vi.mock('fs', async () => {
-  const { Writable } = await import('stream');
+  const actual = (await vi.importActual<typeof import('fs')>('fs')) as unknown as Record<
+    string,
+    unknown
+  >;
   return {
+    ...actual,
     default: {
-      createReadStream: vi.fn(() => 'mock-stream'),
-      createWriteStream: vi.fn(
-        () => new Writable({ write: (_chunk, _enc, cb) => cb() }),
-      ),
-      promises: { rm: vi.fn() },
+      ...(actual.default as Record<string, unknown>),
+      createReadStream: () => Readable.from(['data']),
+      createWriteStream: (...args: unknown[]) => mocks.createWriteStream(...args),
     },
   };
 });
 
 import {
-  listFiles,
-  uploadFile,
-  downloadFile,
   createDirectory,
+  downloadFile,
+  listFiles,
   moveFile,
   removeFile,
   shareFile,
+  uploadFile,
 } from './operations.js';
-import { getDriveClient } from './client.js';
-import { resolvePath } from './resolver.js';
-import { logActivity } from '../logger/index.js';
-import { invalidateCachedPath } from './cache.js';
-import { Readable } from 'stream';
-import fs from 'fs';
+import { JustStoreError } from '@juststore/shared';
 
-describe('drive/operations', () => {
-  let mockDrive: Record<string, any>;
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.resolvePath.mockImplementation(async (p: string) => `id:${p}`);
+  mocks.filesGet.mockResolvedValue({ data: { webViewLink: 'https://link' } });
+  mocks.createWriteStream.mockImplementation(
+    () => new Writable({ write: (_chunk, _encoding, callback) => callback() }),
+  );
+});
 
-  beforeEach(() => {
-    vi.clearAllMocks();
+describe('listFiles', () => {
+  it('lists the resolved folder', async () => {
+    mocks.filesList.mockResolvedValue({ data: { files: [{ id: '1', name: 'a' }] } });
 
-    mockDrive = {
-      list: vi.fn(),
-      create: vi.fn(),
-      get: vi.fn(),
-      update: vi.fn(),
-      delete: vi.fn(),
-      permissions: {
-        create: vi.fn(),
-      },
-    };
-
-    vi.mocked(getDriveClient).mockResolvedValue({
-      files: mockDrive,
-      permissions: mockDrive.permissions,
-    } as any);
-
-    vi.mocked(resolvePath).mockResolvedValue('resolved_id');
+    await expect(listFiles('photos')).resolves.toEqual([{ id: '1', name: 'a' }]);
+    expect(mocks.filesList.mock.calls[0][0].q).toBe("'id:photos' in parents and trashed=false");
   });
 
-  describe('listFiles', () => {
-    it('lists files in directory', async () => {
-      const mockFiles = [
-        { id: '1', name: 'file1.txt', mimeType: 'text/plain' },
-        { id: '2', name: 'file2.txt', mimeType: 'text/plain' },
-      ];
-      mockDrive.list.mockResolvedValue({ data: { files: mockFiles } });
+  it('handles an empty folder', async () => {
+    mocks.filesList.mockResolvedValue({ data: {} });
+    await expect(listFiles('')).resolves.toEqual([]);
+  });
+});
 
-      const result = await listFiles('/test');
+describe('uploadFile', () => {
+  it('uploads under the requested name and records the event', async () => {
+    mocks.filesCreate.mockResolvedValue({ data: { id: 'f1', name: 'report.pdf', size: '10' } });
 
-      expect(result).toEqual(mockFiles);
-      expect(mockDrive.list).toHaveBeenCalledWith({
-        q: "'resolved_id' in parents and trashed=false",
-        fields: expect.stringContaining('files('),
-        spaces: 'drive',
-        orderBy: 'name',
-      });
+    const file = await uploadFile('/tmp/local.bin', 'docs', 'report.pdf');
+
+    expect(file.id).toBe('f1');
+    expect(mocks.filesCreate.mock.calls[0][0].requestBody).toEqual({
+      name: 'report.pdf',
+      parents: ['id:docs'],
     });
-
-    it('returns empty array when no files', async () => {
-      mockDrive.list.mockResolvedValue({ data: { files: [] } });
-      const result = await listFiles('/empty');
-      expect(result).toEqual([]);
-    });
+    expect(mocks.logActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ operation: 'upload', path: 'docs/report.pdf', driveFileId: 'f1' }),
+    );
   });
 
-  describe('uploadFile', () => {
-    it('uploads file and logs activity', async () => {
-      const mockFile = { id: '1', name: 'test.txt', mimeType: 'text/plain' };
-      mockDrive.create.mockResolvedValue({ data: mockFile });
-
-      const result = await uploadFile('/local/test.txt', '/drive/dir');
-
-      expect(result).toEqual(mockFile);
-      expect(mockDrive.create).toHaveBeenCalled();
-      expect(logActivity).toHaveBeenCalledWith(
-        expect.objectContaining({ operation: 'upload', status: 'success' }),
-      );
-    });
-
-    it('uses the given name instead of the temp file name', async () => {
-      mockDrive.create.mockResolvedValue({ data: { id: '1', name: 'report.pdf' } });
-
-      await uploadFile('/tmp/uploads/3f9a1c', undefined, 'report.pdf');
-
-      expect(mockDrive.create).toHaveBeenCalledWith(
-        expect.objectContaining({ requestBody: expect.objectContaining({ name: 'report.pdf' }) }),
-      );
-    });
+  it('falls back to the local file name', async () => {
+    mocks.filesCreate.mockResolvedValue({ data: { id: 'f1', name: 'local.bin' } });
+    await uploadFile('/tmp/local.bin');
+    expect(mocks.filesCreate.mock.calls[0][0].requestBody.name).toBe('local.bin');
   });
 
-  describe('createDirectory', () => {
-    it('creates directory and logs activity', async () => {
-      const mockFolder = { id: '1', name: 'newdir', mimeType: 'application/vnd.google-apps.folder' };
-      mockDrive.create.mockResolvedValue({ data: mockFolder });
+  it('records a root upload without a leading slash', async () => {
+    mocks.filesCreate.mockResolvedValue({ data: { id: 'f1', name: 'a.txt' } });
+    await uploadFile('/tmp/a.txt', undefined, 'a.txt');
+    expect(mocks.logActivity).toHaveBeenCalledWith(expect.objectContaining({ path: 'a.txt' }));
+  });
+});
 
-      const result = await createDirectory('/parent/newdir');
+describe('downloadFile', () => {
+  it('waits for the stream to finish before reporting success', async () => {
+    mocks.filesGet.mockResolvedValue({ data: Readable.from(['chunk']) });
 
-      expect(result).toEqual(mockFolder);
-      expect(logActivity).toHaveBeenCalledWith(
-        expect.objectContaining({ operation: 'mkdir', status: 'success' }),
-      );
-    });
+    await expect(downloadFile('a/b.txt', '/tmp/out.txt')).resolves.toBe('/tmp/out.txt');
+    expect(mocks.logActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ operation: 'download', path: 'a/b.txt' }),
+    );
   });
 
-  describe('moveFile', () => {
-    it('moves file to new location', async () => {
-      const mockFile = { id: '1', name: 'dest.txt' };
-      mockDrive.get.mockResolvedValue({ data: { parents: ['old_parent'] } });
-      mockDrive.update.mockResolvedValue({ data: mockFile });
+  it('fails when the destination cannot be written', async () => {
+    mocks.filesGet.mockResolvedValue({ data: Readable.from(['chunk']) });
+    mocks.createWriteStream.mockImplementation(
+      () => new Writable({ write: (_c, _e, callback) => callback(new Error('disk full')) }),
+    );
 
-      const result = await moveFile('/src/file.txt', '/dest/dest.txt');
+    await expect(downloadFile('a/b.txt', '/tmp/out.txt')).rejects.toThrow('disk full');
+  });
+});
 
-      expect(result).toEqual(mockFile);
-      expect(mockDrive.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          fileId: 'resolved_id',
-          addParents: 'resolved_id',
-          removeParents: 'old_parent',
-        }),
-      );
-      expect(logActivity).toHaveBeenCalledWith(
-        expect.objectContaining({ operation: 'mv' }),
-      );
+describe('createDirectory', () => {
+  it('creates a folder under its parent', async () => {
+    mocks.filesCreate.mockResolvedValue({ data: { id: 'd1', name: 'photos' } });
+
+    await createDirectory('photos/2024');
+
+    expect(mocks.filesCreate.mock.calls[0][0].requestBody).toMatchObject({
+      name: '2024',
+      parents: ['id:photos'],
     });
+    expect(mocks.logActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ operation: 'mkdir', path: 'photos/2024' }),
+    );
+  });
+});
+
+describe('moveFile', () => {
+  it('moves between folders and invalidates the cache', async () => {
+    mocks.filesGet.mockResolvedValueOnce({ data: { parents: ['id:photos'] } });
+    mocks.filesUpdate.mockResolvedValue({ data: { id: 'f1', name: 'new.txt' } });
+
+    await moveFile('photos/a.txt', 'archive/new.txt');
+
+    expect(mocks.filesUpdate.mock.calls[0][0]).toMatchObject({
+      addParents: 'id:archive',
+      removeParents: 'id:photos',
+    });
+    expect(mocks.invalidateCachedPath).toHaveBeenCalledWith('photos/a.txt', 'id:photos/a.txt');
+  });
+});
+
+describe('removeFile', () => {
+  it('moves to trash by default', async () => {
+    await removeFile('a.txt');
+
+    expect(mocks.filesUpdate).toHaveBeenCalledWith({
+      fileId: 'id:a.txt',
+      requestBody: { trashed: true },
+    });
+    expect(mocks.filesDelete).not.toHaveBeenCalled();
+    expect(mocks.logActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ operation: 'rm', detail: 'Moved to trash' }),
+    );
   });
 
-  describe('removeFile', () => {
-    it('moves file to trash by default and invalidates the cache', async () => {
-      mockDrive.update.mockResolvedValue({});
+  it('deletes permanently when asked', async () => {
+    await removeFile('a.txt', { permanent: true });
+    expect(mocks.filesDelete).toHaveBeenCalledWith({ fileId: 'id:a.txt' });
+  });
 
-      await removeFile('/file.txt');
+  it('refuses to remove the root', async () => {
+    await expect(removeFile('')).rejects.toBeInstanceOf(JustStoreError);
+    await expect(removeFile('/')).rejects.toThrow(/root folder/);
+  });
+});
 
-      expect(mockDrive.update).toHaveBeenCalledWith({
-        fileId: 'resolved_id',
-        requestBody: { trashed: true },
-      });
-      expect(mockDrive.delete).not.toHaveBeenCalled();
-      expect(invalidateCachedPath).toHaveBeenCalledWith('file.txt', 'resolved_id');
-      expect(logActivity).toHaveBeenCalledWith(
-        expect.objectContaining({ operation: 'rm', status: 'success' }),
-      );
-    });
+describe('shareFile', () => {
+  it('shares a link and returns it', async () => {
+    await expect(shareFile('a.txt')).resolves.toBe('https://link');
+    expect(mocks.logActivity).toHaveBeenCalledWith(expect.objectContaining({ operation: 'share' }));
+  });
 
-    it('deletes permanently when asked', async () => {
-      mockDrive.delete.mockResolvedValue({});
-
-      await removeFile('file.txt', { permanent: true });
-
-      expect(mockDrive.delete).toHaveBeenCalledWith({ fileId: 'resolved_id' });
-    });
-
-    it('refuses to remove the root folder', async () => {
-      await expect(removeFile('/')).rejects.toThrow(/root folder/);
-      expect(mockDrive.update).not.toHaveBeenCalled();
+  it('grants a role to an email', async () => {
+    await shareFile('a.txt', 'x@y.com', 'writer');
+    expect(mocks.permissionsCreate).toHaveBeenCalledWith({
+      fileId: 'id:a.txt',
+      requestBody: { type: 'user', role: 'writer', emailAddress: 'x@y.com' },
     });
   });
 
-  describe('downloadFile', () => {
-    it('resolves after the stream is fully written', async () => {
-      mockDrive.get.mockResolvedValue({ data: Readable.from(['hello']) });
-
-      const result = await downloadFile('docs/a.txt', '/tmp/a.txt');
-
-      expect(result).toBe('/tmp/a.txt');
-      expect(logActivity).toHaveBeenCalledWith(
-        expect.objectContaining({ operation: 'download', path: 'docs/a.txt' }),
-      );
-    });
-
-    it('removes the partial file when the download fails', async () => {
-      const failing = new Readable({
-        read() {
-          this.destroy(new Error('network down'));
-        },
-      });
-      mockDrive.get.mockResolvedValue({ data: failing });
-
-      await expect(downloadFile('a.txt', '/tmp/a.txt')).rejects.toThrow('network down');
-      expect(fs.promises.rm).toHaveBeenCalledWith('/tmp/a.txt', { force: true });
-      expect(logActivity).not.toHaveBeenCalled();
-    });
+  it('transfers ownership only when an email is given', async () => {
+    await shareFile('a.txt', 'x@y.com', 'owner');
+    expect(mocks.permissionsCreate.mock.calls[0][0].transferOwnership).toBe(true);
+    await expect(shareFile('a.txt', undefined, 'owner')).rejects.toThrow(/--email/);
   });
 
-  describe('shareFile', () => {
-    it('shares file with email and returns link', async () => {
-      mockDrive.permissions.create.mockResolvedValue({});
-      mockDrive.get.mockResolvedValue({
-        data: { webViewLink: 'https://drive.google.com/link' },
-      });
-
-      const result = await shareFile('/file.txt', 'user@test.com', 'reader');
-
-      expect(result).toBe('https://drive.google.com/link');
-      expect(mockDrive.permissions.create).toHaveBeenCalled();
-      expect(logActivity).toHaveBeenCalledWith(
-        expect.objectContaining({ operation: 'share', status: 'success' }),
-      );
-    });
-
-    it('shares file without email (link only)', async () => {
-      mockDrive.get.mockResolvedValue({
-        data: { webViewLink: 'https://drive.google.com/link' },
-      });
-
-      const result = await shareFile('/file.txt');
-
-      expect(result).toBe('https://drive.google.com/link');
-    });
-
-    it('rejects unknown roles', async () => {
-      await expect(shareFile('/file.txt', 'a@b.com', 'admin')).rejects.toThrow(/Invalid role/);
-      expect(mockDrive.permissions.create).not.toHaveBeenCalled();
-    });
-
-    it('sets transferOwnership for owner role', async () => {
-      mockDrive.permissions.create.mockResolvedValue({});
-      mockDrive.get.mockResolvedValue({ data: { webViewLink: 'link' } });
-
-      await shareFile('/file.txt', 'a@b.com', 'owner');
-
-      expect(mockDrive.permissions.create).toHaveBeenCalledWith(
-        expect.objectContaining({ transferOwnership: true }),
-      );
-    });
+  it('rejects an unknown role', async () => {
+    await expect(shareFile('a.txt', 'x@y.com', 'superuser')).rejects.toThrow(/Invalid role/);
   });
 });

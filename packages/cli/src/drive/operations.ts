@@ -47,9 +47,10 @@ export async function uploadFile(
 
   const file = response.data as DriveFile;
   await logActivity({
-    timestamp: new Date().toISOString(),
     operation: 'upload',
-    path: normalizePath(`${drivePath || ''}/${fileName}`),
+    path: `${drivePath ? normalizePath(drivePath) : ''}/${fileName}`.replace(/^\//, ''),
+    driveFileId: file.id,
+    bytes: Number(file.size) || undefined,
     status: 'success',
   });
 
@@ -80,9 +81,9 @@ export async function downloadFile(
   }
 
   await logActivity({
-    timestamp: new Date().toISOString(),
     operation: 'download',
     path: normalizePath(drivePath),
+    driveFileId: fileId,
     status: 'success',
   });
   return destPath;
@@ -107,9 +108,9 @@ export async function createDirectory(drivePath: string): Promise<DriveFile> {
 
   const folder = response.data as DriveFile;
   await logActivity({
-    timestamp: new Date().toISOString(),
     operation: 'mkdir',
     path: normalized,
+    driveFileId: folder.id,
     status: 'success',
   });
 
@@ -145,9 +146,9 @@ export async function moveFile(
   const file = response.data as DriveFile;
   await invalidateCachedPath(normalizePath(sourcePath), fileId);
   await logActivity({
-    timestamp: new Date().toISOString(),
     operation: 'mv',
     path: `${normalizePath(sourcePath)} -> ${normalizedDest}`,
+    driveFileId: fileId,
     status: 'success',
   });
 
@@ -174,9 +175,9 @@ export async function removeFile(
   await invalidateCachedPath(normalized, fileId);
 
   await logActivity({
-    timestamp: new Date().toISOString(),
     operation: 'rm',
     path: normalized,
+    driveFileId: fileId,
     status: 'success',
     detail: options.permanent ? 'Deleted permanently' : 'Moved to trash',
   });
@@ -218,9 +219,9 @@ export async function shareFile(
   const link = response.data.webViewLink || '';
 
   await logActivity({
-    timestamp: new Date().toISOString(),
     operation: 'share',
     path: normalizePath(drivePath),
+    driveFileId: fileId,
     status: 'success',
     detail: email ? `Shared with ${email} (${role})` : 'Link shared',
   });
