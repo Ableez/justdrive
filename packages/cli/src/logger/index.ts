@@ -1,33 +1,27 @@
-import fs from 'fs/promises';
-import path from 'path';
-import os from 'os';
-import { CONFIG_DIR, ACTIVITY_LOG_FILE, ActivityLogEntry } from '@juststore/shared';
+import { normalizePath } from '@juststore/shared';
+import { flush, queueEvent, type EventType } from './outbox.js';
 
-function getLogPath(): string {
-  return path.join(os.homedir(), CONFIG_DIR, ACTIVITY_LOG_FILE);
-}
+/**
+ * The event is written to the local queue first, then handed to the server
+ * without waiting for it: the file operation already went to Drive, and an
+ * unreachable server must not fail or delay the transfer.
+ */
+export async function logActivity(entry: {
+  operation: EventType;
+  path: string;
+  driveFileId?: string;
+  bytes?: number;
+  status: 'success' | 'error';
+  detail?: string;
+}): Promise<void> {
+  await queueEvent({
+    type: entry.operation,
+    path: normalizePath(entry.path),
+    drive_file_id: entry.driveFileId,
+    bytes: entry.bytes,
+    status: entry.status,
+    detail: entry.detail,
+  });
 
-export async function logActivity(entry: ActivityLogEntry): Promise<void> {
-  const logPath = getLogPath();
-  await fs.mkdir(path.dirname(logPath), { recursive: true });
-
-  let entries: ActivityLogEntry[] = [];
-  try {
-    const raw = await fs.readFile(logPath, 'utf-8');
-    entries = JSON.parse(raw);
-  } catch {
-    // File doesn't exist yet
-  }
-
-  entries.push(entry);
-  await fs.writeFile(logPath, JSON.stringify(entries, null, 2));
-}
-
-export async function getActivityLog(): Promise<ActivityLogEntry[]> {
-  try {
-    const raw = await fs.readFile(getLogPath(), 'utf-8');
-    return JSON.parse(raw);
-  } catch {
-    return [];
-  }
+  void flush().catch(() => {});
 }
