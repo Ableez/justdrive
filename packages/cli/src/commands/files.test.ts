@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { AuthError } from '@juststore/shared';
 
 vi.mock('../drive/operations.js', () => ({
   uploadFile: vi.fn(),
@@ -148,8 +149,8 @@ describe('filesCommand', () => {
     ['mkdir', ['dir'], createDirectory],
     ['mv', ['a', 'b'], moveFile],
     ['rm', ['a'], removeFile],
-  ] as const)('%s reports auth errors readably and exits 1', async (name, args, op) => {
-    vi.mocked(op).mockRejectedValue(new Error('invalid_grant'));
+  ] as const)('%s reports the failure and exits 1', async (name, args, op) => {
+    vi.mocked(op).mockRejectedValue(new AuthError('Not signed in. Run: justdrive login'));
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -157,7 +158,10 @@ describe('filesCommand', () => {
     await cmd.parseAsync([...args], { from: 'user' });
 
     expect(exitSpy).toHaveBeenCalledWith(1);
-    expect(errorSpy).toHaveBeenCalledWith(expect.any(String), expect.stringContaining('justdrive auth login'));
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.stringContaining('justdrive login'),
+    );
     exitSpy.mockRestore();
     errorSpy.mockRestore();
   });
