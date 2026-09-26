@@ -39,15 +39,60 @@ describe('event outbox', () => {
     expect(sendEvents.mock.calls[0][0][0].id).toBe(id);
   });
 
-  it('removes the events the server accepted', async () => {
+  it('drops a batch the server fully accepted', async () => {
     await queueEvent({ type: 'upload', path: 'a.txt', status: 'success' });
     await queueEvent({ type: 'download', path: 'b.txt', status: 'success' });
 
+    sendEvents.mockResolvedValue(2);
+    const result = await flush();
+
+    expect(result).toEqual({ sent: 2, remaining: 0 });
+    expect(await pendingCount()).toBe(0);
+  });
+
+  it('keeps the whole batch when the server accepted only part of it', async () => {
+    await queueEvent({ type: 'upload', path: 'a.txt', status: 'success' });
+    await queueEvent({ type: 'download', path: 'b.txt', status: 'success' });
+
+    // The count says how many rows exist, not which of ours they were, so a
+    // partial batch must not be trimmed from the front.
     sendEvents.mockResolvedValue(1);
     const result = await flush();
 
-    expect(result).toEqual({ sent: 1, remaining: 1 });
+    expect(result).toEqual({ sent: 1, remaining: 2 });
+    expect(await pendingCount()).toBe(2);
+  });
+
+  it('refuses to trim the queue on an unusable accepted count', async () => {
+    await queueEvent({ type: 'upload', path: 'a.txt', status: 'success' });
+
+    sendEvents.mockResolvedValue(99);
+    await expect(flush()).rejects.toThrow(/accepted count/);
     expect(await pendingCount()).toBe(1);
+  });
+
+  it('does not lose an event queued while a flush was in flight', async () => {
+    let release: () => void = () => {};
+    sendEvents.mockImplementation(
+      () => new Promise<number>((resolve) => { release = () => resolve(1); }),
+    );
+
+    await queueEvent({ type: 'upload', path: 'first.txt', status: 'success' });
+    const flushing = flush();
+    await Promise.resolve();
+
+    await queueEvent({ type: 'download', path: 'second.txt', status: 'success' });
+    release();
+    await flushing;
+
+    // Without serialised access the first flush rewrites the file from the
+    // snapshot it took before the network call, discarding the second event.
+    const remaining = await pendingCount();
+    expect(remaining).toBe(1);
+
+    const { readFile } = await import('fs/promises');
+    const kept = JSON.parse(await readFile(path.join(home, 'outbox.json'), 'utf-8'));
+    expect(kept[0].path).toBe('second.txt');
   });
 
   it('keeps everything queued when the server is unreachable', async () => {
