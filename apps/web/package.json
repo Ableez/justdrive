@@ -14,7 +14,6 @@
     "db:migrate": "drizzle-kit migrate"
   },
   "dependencies": {
-    "@juststore/shared": "workspace:^",
     "@vercel/functions": "^3.9.9",
     "drizzle-orm": "^0.45.3",
     "next": "16.2.10",
