@@ -1,4 +1,4 @@
-import { AuthError, resolveApiUrl } from '@juststore/shared';
+import { AuthError, isRetryableStatus, resolveApiUrl, withRetry } from '@juststore/shared';
 import { loadSession, saveSession, type DeviceSession } from '../config/session.js';
 import { clearCache } from '../drive/cache.js';
 
@@ -36,11 +36,17 @@ let inflightRefresh: Promise<DeviceSession> | null = null;
 
 async function performRefresh(): Promise<DeviceSession> {
   const session = await requireSession();
-  const response = await fetch(`${getApiUrl()}/api/cli/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ grant_type: 'refresh_token', refresh_token: session.refreshToken }),
-  });
+  // The fetch alone is retried here. A 4xx still means the grant is spent
+  // and becomes an AuthError below, which the caller must not retry.
+  const response = await withRetry(
+    () =>
+      fetch(`${getApiUrl()}/api/cli/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ grant_type: 'refresh_token', refresh_token: session.refreshToken }),
+      }),
+    { times: 2, baseDelayMs: 300 },
+  );
 
   const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
   if (!response.ok) {
@@ -79,13 +85,9 @@ export function refreshSession(): Promise<DeviceSession> {
   return inflightRefresh;
 }
 
-export async function request<T>(
-  path: string,
-  init: RequestInit = {},
-  retry = true,
-): Promise<T> {
+export async function request<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
   const session = await requireSession();
-  const response = await fetch(`${getApiUrl()}${path}`, {
+  const response = await fetchWithRetry(`${getApiUrl()}${path}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
@@ -115,6 +117,30 @@ export async function request<T>(
     );
   }
   return body as T;
+}
+
+/**
+ * Retries one HTTP attempt on network failures and retryable statuses, then
+ * hands back the final response for the caller to interpret. Refresh-step
+ * failures are deliberately out of scope: a spent grant or a malformed token
+ * response must surface immediately, not burn retries.
+ */
+async function fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
+  return withRetry(
+    async () => {
+      const response = await fetch(url, init);
+      if (isRetryableStatus(response.status)) {
+        throw new ApiError(`Request failed (${response.status})`, response.status);
+      }
+      return response;
+    },
+    {
+      times: 2,
+      baseDelayMs: 300,
+      shouldRetry: (error) =>
+        error instanceof ApiError ? isRetryableStatus(error.status) : true,
+    },
+  );
 }
 
 export interface DriveToken {

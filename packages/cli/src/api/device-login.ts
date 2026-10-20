@@ -1,5 +1,6 @@
 import os from 'os';
 import { getApiUrl, forgetSession } from './client.js';
+import { withRetry } from '@juststore/shared';
 import { clearSession, saveSession, type DeviceSession } from '../config/session.js';
 
 export interface DeviceCodeResponse {
@@ -86,6 +87,12 @@ function tokenErrorMessage(error: string): string {
 }
 
 async function pollToken(deviceCode: string): Promise<PollResponse> {
+  // A 5xx here used to kill the whole login. Retry with backoff first; only
+  // protocol errors (denied, expired) fail the sign-in immediately.
+  return withRetry(() => pollTokenOnce(deviceCode), { baseDelayMs: 500 });
+}
+
+async function pollTokenOnce(deviceCode: string): Promise<PollResponse> {
   const response = await fetch(`${getApiUrl()}/api/cli/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
