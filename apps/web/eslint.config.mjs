@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Generated CLI release bundle, copied in by prebuild.
+    "public/r/**",
   ]),
 ]);
 
