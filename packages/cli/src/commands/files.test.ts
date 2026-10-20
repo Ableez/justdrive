@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { AuthError } from '@juststore/shared';
 
 vi.mock('../drive/operations.js', () => ({
@@ -37,9 +37,13 @@ describe('filesCommand', () => {
     vi.clearAllMocks();
   });
 
+  afterEach(() => {
+    process.exitCode = undefined;
+  });
+
   it('has correct name and description', () => {
     expect(filesCommand.name()).toBe('files');
-    expect(filesCommand.description()).toBe('File operations');
+    expect(filesCommand.description()).toBe('Manage files in your Drive');
   });
 
   it('has all subcommands', () => {
@@ -149,20 +153,18 @@ describe('filesCommand', () => {
     ['mkdir', ['dir'], createDirectory],
     ['mv', ['a', 'b'], moveFile],
     ['rm', ['a'], removeFile],
-  ] as const)('%s reports the failure and exits 1', async (name, args, op) => {
+  ] as const)('%s reports the failure and sets exit code 1', async (name, args, op) => {
     vi.mocked(op).mockRejectedValue(new AuthError('Not signed in. Run: justdrive login'));
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const cmd = filesCommand.commands.find((c) => c.name() === name)!;
     await cmd.parseAsync([...args], { from: 'user' });
 
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(process.exitCode).toBe(1);
     expect(errorSpy).toHaveBeenCalledWith(
       expect.any(String),
       expect.stringContaining('justdrive login'),
     );
-    exitSpy.mockRestore();
     errorSpy.mockRestore();
   });
 });

@@ -13,7 +13,7 @@ import { formatJson } from '../output/json.js';
 import { describeError } from '../output/errors.js';
 
 export const filesCommand = new Command('files')
-  .description('File operations');
+  .description('Manage files in your Drive');
 
 filesCommand
   .command('ls')
@@ -30,7 +30,8 @@ filesCommand
       }
     } catch (error) {
       console.error('ls failed:', describeError(error));
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
   });
 
@@ -47,7 +48,8 @@ filesCommand
       console.log(`Uploaded: ${result.name} (${result.id})`);
     } catch (error) {
       console.error('Upload failed:', describeError(error));
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
   });
 
@@ -64,7 +66,8 @@ filesCommand
       console.log(`Downloaded: ${result}`);
     } catch (error) {
       console.error('Download failed:', describeError(error));
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
   });
 
@@ -78,7 +81,8 @@ filesCommand
       console.log(`Created directory: ${result.name} (${result.id})`);
     } catch (error) {
       console.error('mkdir failed:', describeError(error));
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
   });
 
@@ -93,7 +97,8 @@ filesCommand
       console.log(`Moved to: ${result.name} (${result.id})`);
     } catch (error) {
       console.error('mv failed:', describeError(error));
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
   });
 
@@ -108,6 +113,7 @@ filesCommand
       console.log(options.permanent ? `Deleted permanently: ${path}` : `Moved to trash: ${path}`);
     } catch (error) {
       console.error('rm failed:', describeError(error));
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
   });

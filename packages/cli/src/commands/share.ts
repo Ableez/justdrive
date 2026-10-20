@@ -14,6 +14,7 @@ export const shareCommand = new Command('share')
       console.log(`Link: ${result}`);
     } catch (error) {
       console.error('share failed:', describeError(error));
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
   });
