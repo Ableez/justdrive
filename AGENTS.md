@@ -51,3 +51,10 @@
 - Root `.agents/skills/` does not exist. Add it only when a workflow actually repeats, starting with one narrow skill instead of a framework bundle.
 - Available skills worth using here: `vercel-react-best-practices` for React 19 / Next.js 16 work in `apps/web`, `diagnosing-bugs` for OAuth, device-flow, and Drive API failures where types pass but runtime breaks, `review` for checking a branch against these standards and the task spec, `tdd` for the vitest suites in `packages/cli` and `packages/shared`, and `deploy-to-vercel` only when shipping `apps/web`.
 - Use the smallest skill that covers the task. Do not install or invoke a broader workflow without a reason.
+
+## Learning more about Effect
+
+This repository uses the Effect TypeScript library.
+
+Before writing any Effect code, first read `packages/shared/node_modules/effect/AGENTS.md`
+completely, and follow the links in the file when required.
