@@ -1,14 +1,12 @@
-import { AuthError } from '@juststore/shared';
+import { AuthError, resolveApiUrl } from '@juststore/shared';
 import { loadSession, saveSession, type DeviceSession } from '../config/session.js';
 import { clearCache } from '../drive/cache.js';
-
-const DEFAULT_API_URL = 'https://drive.astexlabs.com';
 
 // Kept in memory so a token rotated moments ago is the one the next call uses.
 let cachedSession: DeviceSession | null = null;
 
 export function getApiUrl(): string {
-  return (process.env.JUSTDRIVE_API_URL || DEFAULT_API_URL).replace(/\/+$/, '');
+  return resolveApiUrl(process.env);
 }
 
 export class ApiError extends Error {

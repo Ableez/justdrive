@@ -19,14 +19,6 @@ export interface LoginOptions {
   onPrompt?: (info: { url: string; code: string }) => void;
 }
 
-const TERMINAL_ERRORS = new Set([
-  'access_denied',
-  'expired_token',
-  'invalid_request',
-  'invalid_grant',
-  'server_error',
-]);
-
 export async function requestDeviceCode(options: LoginOptions): Promise<DeviceCodeResponse> {
   const response = await fetch(`${getApiUrl()}/api/cli/device-code`, {
     method: 'POST',
