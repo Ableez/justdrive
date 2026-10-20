@@ -29,7 +29,31 @@ describe('path cache', () => {
 
   it('survives a corrupt cache file', async () => {
     await fs.writeFile(cacheFile(), 'not json');
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
     expect(await getCachedPath('photos')).toBeNull();
+
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('is corrupt'));
+    errorSpy.mockRestore();
+  });
+
+  it('says nothing when there is no cache file yet', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect(await getCachedPath('photos')).toBeNull();
+
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it('says something when the cache file cannot be read', async () => {
+    await fs.mkdir(cacheFile());
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect(await getCachedPath('photos')).toBeNull();
+
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Could not read'));
+    errorSpy.mockRestore();
   });
 
   it('drops a removed file, its descendants and its segment keys', async () => {

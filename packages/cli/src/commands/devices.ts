@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { formatRows } from '../output/table.js';
-import { listDevices } from '../api/client.js';
+import { getApiUrl, listDevices } from '../api/client.js';
 
 export const devicesCommand = new Command('devices')
   .description('List machines signed in to your account')
@@ -22,5 +22,5 @@ export const devicesCommand = new Command('devices')
         ]),
       ),
     );
-    console.log(chalk.dim('Revoke a machine at https://drive.astexlabs.com/devices'));
+    console.log(chalk.dim(`Revoke a machine at ${getApiUrl()}/devices`));
   });
