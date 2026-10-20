@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { isSameOrigin, securityHeaders } from './request-security';
 
 const PREVIOUS = process.env.JUSTDRIVE_BASE_URL;
@@ -39,6 +39,10 @@ describe('same-origin check', () => {
     expect(isSameOrigin(post('https://evil.example', 'https://drive.astexlabs.com/logout'))).toBe(false);
   });
 
+  it('rejects http when the app runs on https', () => {
+    expect(isSameOrigin(post('http://drive.astexlabs.com'))).toBe(false);
+  });
+
   it('rejects a request with no origin, which a browser form cannot forge', () => {
     expect(isSameOrigin(post(null))).toBe(false);
   });
@@ -49,6 +53,30 @@ describe('same-origin check', () => {
 
   it('ignores the check for safe methods', () => {
     expect(isSameOrigin(new Request('https://drive.astexlabs.com/devices'))).toBe(true);
+  });
+});
+
+describe('production hosts', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('rejects loopback once the app runs in production', () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    expect(isSameOrigin(post('http://localhost:3000', 'http://localhost:3000/logout'))).toBe(false);
+  });
+
+  it('still accepts the configured host in production', () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    expect(isSameOrigin(post('https://drive.astexlabs.com'))).toBe(true);
+  });
+
+  it('fails closed when production has no base url', () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('JUSTDRIVE_BASE_URL', undefined);
+    expect(() => isSameOrigin(post('https://drive.astexlabs.com'))).toThrow(
+      'JUSTDRIVE_BASE_URL is not set',
+    );
   });
 });
 
