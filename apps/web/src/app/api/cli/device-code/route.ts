@@ -28,5 +28,14 @@ export async function POST(request: Request) {
     requestIp: ip ?? undefined,
   });
 
-  return securityHeaders(Response.json(meta));
+  return securityHeaders(
+    Response.json({
+      device_code: meta.deviceCode,
+      user_code: meta.userCode,
+      verification_uri: meta.verificationUri,
+      verification_uri_complete: meta.verificationUriComplete,
+      expires_in: meta.expiresIn,
+      interval: meta.interval,
+    }),
+  );
 }

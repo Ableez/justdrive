@@ -1,6 +1,7 @@
+export { ROOT_FOLDER_NAME } from '@juststore/shared';
+
 export const DRIVE_FILE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 export const SIGN_IN_SCOPES = ['openid', 'email', DRIVE_FILE_SCOPE];
-export const ROOT_FOLDER_NAME = 'juststore';
 
 export const DEVICE_CODE_TTL_SECONDS = 600;
 export const DEVICE_CODE_POLL_INTERVAL_SECONDS = 5;
