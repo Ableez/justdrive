@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { runLogout } from '../api/device-login.js';
+import { getApiUrl } from '../api/client.js';
 import { clearCache } from '../drive/cache.js';
 import { resetDriveClient } from '../drive/client.js';
 import { pendingCount } from '../logger/outbox.js';
@@ -19,7 +20,7 @@ export const logoutCommand = new Command('logout')
     if (warning) {
       console.log('Signed out on this machine only.');
       console.log(`The server could not be reached: ${warning}`);
-      console.log('Remove this machine at https://drive.astexlabs.com/devices');
+      console.log(`Remove this machine at ${getApiUrl()}/devices`);
       process.exitCode = 1;
       return;
     }

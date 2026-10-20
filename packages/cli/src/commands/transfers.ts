@@ -80,7 +80,7 @@ export const inboxCommand = new Command('inbox')
 
 export const receiveCommand = new Command('receive')
   .description('Download files sent to this machine')
-  .argument('[id]', 'Transfer id, or "all"')
+  .argument('[id]', 'Id shown by justdrive inbox, or "all"')
   .argument('[destination]', 'Local directory', '.')
   .action(async (id: string | undefined, destination: string) => {
     const transfers = await fetchTransfers(true);
