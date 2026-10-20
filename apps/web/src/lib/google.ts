@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { isRetryableStatus, withRetry } from '@juststore/shared';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Database } from '../db/client';
 import { googleConnections, users } from '../db/schema';
@@ -28,6 +29,12 @@ export class GoogleError extends Error {
     super(message);
     this.name = 'GoogleError';
   }
+}
+
+// Only 5xx/429 and network failures are worth retrying. A 4xx means the
+// grant or request itself is bad, so retrying would just fail the same way.
+function shouldRetryGoogle(error: unknown): boolean {
+  return error instanceof GoogleError ? isRetryableStatus(error.status) : true;
 }
 
 export interface SignInRequest {
@@ -67,6 +74,10 @@ interface TokenResponse {
 }
 
 async function postForm(url: string, body: Record<string, string>): Promise<TokenResponse> {
+  return withRetry(() => postFormOnce(url, body), { shouldRetry: shouldRetryGoogle });
+}
+
+async function postFormOnce(url: string, body: Record<string, string>): Promise<TokenResponse> {
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -108,6 +119,10 @@ export async function refreshAccessToken(refreshToken: string): Promise<TokenRes
 }
 
 export async function revokeToken(token: string): Promise<void> {
+  return withRetry(() => revokeTokenOnce(token), { shouldRetry: shouldRetryGoogle });
+}
+
+async function revokeTokenOnce(token: string): Promise<void> {
   const response = await fetch(REVOKE_ENDPOINT, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -264,6 +279,16 @@ async function refreshAndStore(
 }
 
 async function driveRequest(
+  accessToken: string,
+  path: string,
+  init: RequestInit = {},
+): Promise<Record<string, unknown>> {
+  return withRetry(() => driveRequestOnce(accessToken, path, init), {
+    shouldRetry: shouldRetryGoogle,
+  });
+}
+
+async function driveRequestOnce(
   accessToken: string,
   path: string,
   init: RequestInit = {},
