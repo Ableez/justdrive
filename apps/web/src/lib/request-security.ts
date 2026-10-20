@@ -1,25 +1,29 @@
-import { baseUrl } from './env';
+import { baseUrl, isProduction } from './env';
 
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
-function allowedHosts(): Set<string> {
-  const hosts = new Set<string>();
+function allowedOrigins(): Set<string> {
+  const origins = new Set<string>();
+  const url = baseUrl();
   try {
-    hosts.add(new URL(baseUrl()).host);
+    origins.add(new URL(url).origin);
   } catch {
-    // A malformed base URL leaves only the loopback defaults below.
+    // A malformed base URL leaves the list empty, so unsafe requests are
+    // rejected rather than compared against nothing.
   }
-  // Local development and `justdrive` on the same machine.
-  hosts.add('localhost:3000');
-  hosts.add('127.0.0.1:3000');
-  return hosts;
+  if (!isProduction()) {
+    // Local development and `justdrive` on the same machine.
+    origins.add('http://localhost:3000');
+    origins.add('http://127.0.0.1:3000');
+  }
+  return origins;
 }
 
 /**
  * A same-origin check on every state-changing request. Browsers attach `Origin`
  * to all of these, and a cross-site form post cannot forge it.
  *
- * The host is compared against the configured app host rather than
+ * The origin is compared against the configured app origin rather than
  * `request.url`, because Next builds that from its own bind hostname on some
  * deployments and from the Host header on others.
  */
@@ -29,8 +33,11 @@ export function isSameOrigin(request: Request): boolean {
   const origin = request.headers.get('origin');
   if (!origin) return false;
 
+  // The origin list is built outside the try, so a broken configuration fails
+  // loudly instead of looking like a rejected origin.
+  const origins = allowedOrigins();
   try {
-    return allowedHosts().has(new URL(origin).host);
+    return origins.has(new URL(origin).origin);
   } catch {
     return false;
   }

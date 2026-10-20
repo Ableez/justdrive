@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, eq, isNull, lt, or } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import type { Database } from '../db/client';
 import { deviceTokens, devices } from '../db/schema';
 import { hashToken } from './crypto';
@@ -134,34 +134,97 @@ export async function rotateRefreshToken(
   }
 
   if (row.usedAt) {
-    await revokeFamily(db, row.familyId ?? row.id);
+    await revokeFamilyLocked(db, row.familyId ?? row.id);
     throw reusedTokenError();
   }
 
-  // The write is the gate, not the read above: two concurrent rotations of the
-  // same token must not both succeed, or a stolen token could race the real one
-  // and never trip reuse detection.
-  const claimed = await db
-    .update(deviceTokens)
-    .set({ usedAt: new Date() })
-    .where(and(eq(deviceTokens.id, row.id), isNull(deviceTokens.usedAt)))
-    .returning({ id: deviceTokens.id });
+  // The claim and the replacement pair are committed atomically under a
+  // per-family advisory lock. Without it a replay can revoke the family
+  // before the winner inserts its replacement, resurrecting a revoked family.
+  const familyKey = row.familyId ?? row.id;
+  const outcome = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${familyKey}))`);
 
-  if (claimed.length === 0) {
-    await revokeFamily(db, row.familyId ?? row.id);
-    throw reusedTokenError();
+    const tainted = await tx.query.deviceTokens.findFirst({
+      where: and(eq(deviceTokens.familyId, familyKey), isNotNull(deviceTokens.revokedAt)),
+    });
+    if (tainted) return { status: 'tainted' as const };
+
+    const current = await tx.query.deviceTokens.findFirst({
+      where: and(eq(deviceTokens.id, row.id), eq(deviceTokens.kind, 'refresh')),
+      with: { device: true },
+    });
+    if (!current || current.revokedAt || current.device.revokedAt) {
+      return { status: 'revoked' as const };
+    }
+    if (current.expiresAt.getTime() <= Date.now()) return { status: 'expired' as const };
+    if (current.usedAt) {
+      await tx
+        .update(deviceTokens)
+        .set({ revokedAt: new Date() })
+        .where(and(eq(deviceTokens.familyId, familyKey), isNull(deviceTokens.revokedAt)));
+      return { status: 'tainted' as const };
+    }
+
+    // The write is the gate, not the read above: two concurrent rotations of the
+    // same token must not both succeed, or a stolen token could race the real one
+    // and never trip reuse detection.
+    const claimed = await tx
+      .update(deviceTokens)
+      .set({ usedAt: new Date() })
+      .where(and(eq(deviceTokens.id, row.id), isNull(deviceTokens.usedAt)))
+      .returning({ id: deviceTokens.id });
+
+    if (claimed.length === 0) {
+      await tx
+        .update(deviceTokens)
+        .set({ revokedAt: new Date() })
+        .where(and(eq(deviceTokens.familyId, familyKey), isNull(deviceTokens.revokedAt)));
+      return { status: 'tainted' as const };
+    }
+
+    const accessToken = mint(ACCESS_PREFIX);
+    const refreshToken = mint(REFRESH_PREFIX);
+    const accessExpiresAt = accessExpiry();
+    const refreshExpiresAt = refreshExpiry();
+    await tx.insert(deviceTokens).values([
+      {
+        id: randomUUID(),
+        deviceId: row.deviceId,
+        kind: 'access',
+        tokenHash: hashToken(accessToken),
+        familyId: familyKey,
+        expiresAt: accessExpiresAt,
+      },
+      {
+        id: randomUUID(),
+        deviceId: row.deviceId,
+        kind: 'refresh',
+        tokenHash: hashToken(refreshToken),
+        familyId: familyKey,
+        expiresAt: refreshExpiresAt,
+      },
+    ]);
+
+    return {
+      status: 'ok' as const,
+      device: {
+        userId: row.device.userId,
+        deviceId: row.deviceId,
+        deviceName: row.device.name,
+      },
+      tokens: { accessToken, refreshToken, accessExpiresAt, refreshExpiresAt },
+    };
+  });
+
+  if (outcome.status === 'tainted') throw reusedTokenError();
+  if (outcome.status === 'revoked') {
+    throw new DeviceTokenError('This device has been revoked', 'revoked');
   }
-
-  const tokens = await issueTokenPair(db, row.deviceId, row.familyId ?? row.id);
-
-  return {
-    device: {
-      userId: row.device.userId,
-      deviceId: row.deviceId,
-      deviceName: row.device.name,
-    },
-    tokens,
-  };
+  if (outcome.status === 'expired') {
+    throw new DeviceTokenError('Device session expired. Run: justdrive login', 'expired');
+  }
+  return { device: outcome.device, tokens: outcome.tokens };
 }
 
 export async function revokeFamily(db: Database, familyId: string): Promise<void> {
@@ -169,6 +232,16 @@ export async function revokeFamily(db: Database, familyId: string): Promise<void
     .update(deviceTokens)
     .set({ revokedAt: new Date() })
     .where(and(eq(deviceTokens.familyId, familyId), isNull(deviceTokens.revokedAt)));
+}
+
+async function revokeFamilyLocked(db: Database, familyId: string): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${familyId}))`);
+    await tx
+      .update(deviceTokens)
+      .set({ revokedAt: new Date() })
+      .where(and(eq(deviceTokens.familyId, familyId), isNull(deviceTokens.revokedAt)));
+  });
 }
 
 export async function revokeDeviceTokens(db: Database, deviceId: string): Promise<void> {

@@ -9,7 +9,7 @@ import {
   ROOT_FOLDER_NAME,
   SIGN_IN_SCOPES,
 } from './constants';
-import { googleClientId, googleClientSecret } from './env';
+import { baseUrl, googleClientId, googleClientSecret } from './env';
 
 const AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
@@ -44,7 +44,7 @@ export function startSignIn(state: string): SignInRequest {
 
   const url = new URL(AUTH_ENDPOINT);
   url.searchParams.set('client_id', googleClientId());
-  url.searchParams.set('redirect_uri', `${process.env.JUSTDRIVE_BASE_URL}/auth/google/callback`);
+  url.searchParams.set('redirect_uri', `${baseUrl()}/auth/google/callback`);
   url.searchParams.set('response_type', 'code');
   url.searchParams.set('scope', SIGN_IN_SCOPES.join(' '));
   url.searchParams.set('access_type', 'offline');
@@ -93,7 +93,7 @@ export async function exchangeCode(code: string, codeVerifier: string): Promise<
     code_verifier: codeVerifier,
     client_id: googleClientId(),
     client_secret: googleClientSecret(),
-    redirect_uri: `${process.env.JUSTDRIVE_BASE_URL}/auth/google/callback`,
+    redirect_uri: `${baseUrl()}/auth/google/callback`,
     grant_type: 'authorization_code',
   });
 }
@@ -108,12 +108,15 @@ export async function refreshAccessToken(refreshToken: string): Promise<TokenRes
 }
 
 export async function revokeToken(token: string): Promise<void> {
-  await fetch(REVOKE_ENDPOINT, {
+  const response = await fetch(REVOKE_ENDPOINT, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ token }),
     signal: AbortSignal.timeout(GOOGLE_TIMEOUT_MS),
   });
+  if (!response.ok) {
+    throw new GoogleError('Google did not revoke the grant. It may already be gone.', 502);
+  }
 }
 
 export interface GoogleIdentity {
@@ -122,6 +125,9 @@ export interface GoogleIdentity {
 }
 
 export function verifyIdToken(idToken: string, nonce: string): GoogleIdentity {
+  // The id_token arrives over TLS from the token endpoint in exchange for a
+  // client_secret-authenticated code, not as direct user input; claims are
+  // still bound to this request via nonce/aud/exp before use.
   const [headerPart, payloadPart, signaturePart] = idToken.split('.');
   if (!headerPart || !payloadPart || !signaturePart) {
     throw new GoogleError('Google did not return an id_token');
@@ -148,7 +154,7 @@ export function verifyIdToken(idToken: string, nonce: string): GoogleIdentity {
   }
   if (claims.aud !== googleClientId()) throw new GoogleError('Sign-in response was for another app');
   if (!claims.exp || claims.exp * 1000 <= Date.now()) throw new GoogleError('Sign-in response expired');
-  if (claims.email_verified === false) throw new GoogleError('Google account email is unverified');
+  if (claims.email_verified !== true) throw new GoogleError('Google account email is unverified');
   if (!claims.sub || !claims.email) throw new GoogleError('Google did not identify the account');
 
   return { sub: claims.sub, email: claims.email };
