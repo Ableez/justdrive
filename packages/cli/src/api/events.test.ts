@@ -88,7 +88,7 @@ describe('sendEvents', () => {
   });
 
   it('raises so the caller can keep the events queued', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 500 })));
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(new Response('', { status: 500 }))));
     await expect(sendEvents([event])).rejects.toThrow(/Request failed/);
   });
 

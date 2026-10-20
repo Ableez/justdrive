@@ -200,7 +200,7 @@ describe('drive token', () => {
   it('does not turn a non-JSON error body into a parse error', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(new Response('<html><body>Bad Gateway</body></html>', { status: 502 })),
+      vi.fn().mockImplementation(() => Promise.resolve(new Response('<html><body>Bad Gateway</body></html>', { status: 502 }))),
     );
 
     // A proxy error page must not become a SyntaxError quoting raw HTML.
@@ -212,7 +212,7 @@ describe('drive token', () => {
       'fetch',
       vi.fn()
         .mockResolvedValueOnce(jsonResponse({ error: 'expired' }, 401))
-        .mockResolvedValue(jsonResponse({ ok: true })),
+        .mockImplementation(() => Promise.resolve(jsonResponse({ ok: true }))),
     );
 
     // Writing this out would save a session with no access token, which bricks
@@ -234,7 +234,7 @@ describe('drive token', () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(new Response('', { status: 500 }))
-      .mockResolvedValueOnce(new Response('', { status: 500 }));
+      .mockImplementation(() => Promise.resolve(new Response('', { status: 500 })));
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(fetchDriveToken()).rejects.toBeInstanceOf(ApiError);
