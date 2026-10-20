@@ -43,6 +43,10 @@ yarn-error.log*
 # vercel
 .vercel
 
+# agent tooling (local-only)
+.agents/
+.claude/
+
 # typescript
 *.tsbuildinfo
 

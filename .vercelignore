@@ -1,0 +1,15 @@
+# Rebuilt or cached on the build machine; never upload.
+.turbo
+.next
+out
+dist
+coverage
+apps/web/public/r
+*.map
+# Local-only material.
+research
+supabase/.branches
+supabase/.temp
+# Agent tooling noise.
+.agents/
+.claude/
