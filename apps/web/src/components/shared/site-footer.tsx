@@ -7,7 +7,7 @@ export function SiteFooter() {
     <footer className="border-t border-neutral-900 py-10">
       <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-4 px-4 text-sm text-neutral-500 sm:flex-row">
         <p className="flex items-center gap-2 text-neutral-400">
-          <JustdriveLogo className="h-5 w-auto" />
+          <JustdriveLogo className="h-5 w-auto" variant="gradient" />
           Justdrive
         </p>
         <nav className="flex items-center gap-6">
