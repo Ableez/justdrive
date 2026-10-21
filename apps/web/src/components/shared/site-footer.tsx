@@ -6,10 +6,13 @@ export function SiteFooter() {
   return (
     <footer className="border-t border-neutral-900 py-10">
       <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-4 px-4 text-sm text-neutral-500 sm:flex-row">
-        <p className="flex items-center gap-2 text-neutral-400">
-          <JustdriveLogo className="h-5 w-auto" variant="gradient" />
-          Justdrive
-        </p>
+        <Link
+          href="/"
+          className="flex items-center gap-2 font-semibold text-neutral-50"
+        >
+          <JustdriveLogo className="h-6 w-auto" variant="gradient" />
+          <span className="text-xl">Justdrive</span>
+        </Link>
         <nav className="flex items-center gap-6">
           <a
             target="_blank"
