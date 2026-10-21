@@ -36,17 +36,15 @@ let inflightRefresh: Promise<DeviceSession> | null = null;
 
 async function performRefresh(): Promise<DeviceSession> {
   const session = await requireSession();
-  // The fetch alone is retried here. A 4xx still means the grant is spent
-  // and becomes an AuthError below, which the caller must not retry.
-  const response = await withRetry(
-    () =>
-      fetch(`${getApiUrl()}/api/cli/token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ grant_type: 'refresh_token', refresh_token: session.refreshToken }),
-      }),
-    { times: 2, baseDelayMs: 300 },
-  );
+  // One attempt on purpose: the server rotates refresh tokens with
+  // reuse detection, so replaying a spent token after a lost response would
+  // revoke the whole family. A failure here surfaces; the next command tries
+  // again with the still-valid token.
+  const response = await fetch(`${getApiUrl()}/api/cli/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ grant_type: 'refresh_token', refresh_token: session.refreshToken }),
+  });
 
   const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
   if (!response.ok) {
@@ -121,26 +119,66 @@ export async function request<T>(path: string, init: RequestInit = {}, retry = t
 
 /**
  * Retries one HTTP attempt on network failures and retryable statuses, then
- * hands back the final response for the caller to interpret. Refresh-step
- * failures are deliberately out of scope: a spent grant or a malformed token
- * response must surface immediately, not burn retries.
+ * hands back the final response for the caller to interpret. Only idempotent
+ * methods are retried: a POST committed server-side but lost on the way back
+ * must not run twice. Refresh-step failures are deliberately out of scope: a
+ * spent grant or a malformed token response must surface immediately, not
+ * burn retries.
  */
 async function fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
-  return withRetry(
-    async () => {
-      const response = await fetch(url, init);
-      if (isRetryableStatus(response.status)) {
-        throw new ApiError(`Request failed (${response.status})`, response.status);
+  const method = (init.method ?? 'GET').toUpperCase();
+  const idempotent = method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
+  // A POST committed server-side but lost on the way back must not run
+  // twice, and a network failure is indistinguishable from that case.
+  if (!idempotent) return fetch(url, init);
+  let lastResponse: Response | null = null;
+  try {
+    return await withRetry(
+      async () => {
+        const response = await fetch(url, init);
+        lastResponse = response;
+        if (isRetryableStatus(response.status)) {
+          await honorRetryAfter(response);
+          throw new ApiError(`Request failed (${response.status})`, response.status);
+        }
+        return response;
+      },
+      {
+        times: 2,
+        baseDelayMs: 300,
+        shouldRetry: (error) =>
+          error instanceof ApiError ? isRetryableStatus(error.status) : true,
+      },
+    );
+  } catch (error) {
+    // A retried failure threw before the body was read, so the last response
+    // is still unread: surface the server's message instead of a bare status.
+    const failed = lastResponse as Response | null;
+    if (failed && error instanceof ApiError) {
+      const detail = (await failed.json().catch(() => null)) as {
+        error?: unknown;
+        error_code?: unknown;
+      } | null;
+      if (typeof detail?.error === 'string') {
+        throw new ApiError(
+          detail.error,
+          error.status,
+          typeof detail?.error_code === 'string' ? detail.error_code : undefined,
+        );
       }
-      return response;
-    },
-    {
-      times: 2,
-      baseDelayMs: 300,
-      shouldRetry: (error) =>
-        error instanceof ApiError ? isRetryableStatus(error.status) : true,
-    },
-  );
+    }
+    throw error;
+  }
+}
+
+/** Waits out a server-provided Retry-After on 429s, capped at a minute. */
+async function honorRetryAfter(response: Response): Promise<void> {
+  const header = response.headers.get('retry-after');
+  if (header === null) return;
+  const seconds = Number(header);
+  if (Number.isFinite(seconds) && seconds > 0) {
+    await new Promise((resolve) => setTimeout(resolve, Math.min(seconds, 60) * 1000));
+  }
 }
 
 export interface DriveToken {

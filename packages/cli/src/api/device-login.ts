@@ -1,6 +1,6 @@
 import os from 'os';
 import { getApiUrl, forgetSession } from './client.js';
-import { withRetry } from '@juststore/shared';
+import { isRetryableStatus, withRetry } from '@juststore/shared';
 import { clearSession, saveSession, type DeviceSession } from '../config/session.js';
 
 export interface DeviceCodeResponse {
@@ -21,20 +21,46 @@ export interface LoginOptions {
 }
 
 export async function requestDeviceCode(options: LoginOptions): Promise<DeviceCodeResponse> {
-  const response = await fetch(`${getApiUrl()}/api/cli/device-code`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      hostname: options.hostname ?? os.hostname(),
-      os: options.os ?? `${os.platform()} ${os.release()}`,
-      cli_version: options.cliVersion,
-    }),
+  const response = await withRetry(() => postDeviceCode(options), {
+    times: 2,
+    baseDelayMs: 500,
+    shouldRetry: (error) => error instanceof DeviceCodeUnavailable,
   });
-
   if (!response.ok) {
     throw new Error(`Could not start sign-in (${response.status}). Try again shortly.`);
   }
-  return (await response.json()) as DeviceCodeResponse;
+  // The body is parsed outside the retry: a malformed 200 will not fix
+  // itself, so it fails fast instead of minting more code rows.
+  return (await response.json().catch(() => {
+    throw new Error('Could not start sign-in. The server returned an unreadable response.');
+  })) as DeviceCodeResponse;
+}
+
+/** The server or network failed transiently; the request itself was fine. */
+class DeviceCodeUnavailable extends Error {
+  constructor(readonly status?: number) {
+    super(`Could not start sign-in${status ? ` (${status})` : ''}. Try again shortly.`);
+    this.name = 'DeviceCodeUnavailable';
+  }
+}
+
+async function postDeviceCode(options: LoginOptions): Promise<Response> {
+  let response: Response;
+  try {
+    response = await fetch(`${getApiUrl()}/api/cli/device-code`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        hostname: options.hostname ?? os.hostname(),
+        os: options.os ?? `${os.platform()} ${os.release()}`,
+        cli_version: options.cliVersion,
+      }),
+    });
+  } catch {
+    throw new DeviceCodeUnavailable();
+  }
+  if (isRetryableStatus(response.status)) throw new DeviceCodeUnavailable(response.status);
+  return response;
 }
 
 export async function completeDeviceLogin(
@@ -68,7 +94,11 @@ export async function completeDeviceLogin(
 
     const error = body.error;
     if (error === 'slow_down') {
-      waitMs += 5000;
+      const serverInterval = Number(body.interval);
+      waitMs = Math.max(
+        waitMs + 5000,
+        Number.isFinite(serverInterval) && serverInterval > 0 ? serverInterval * 1000 : 0,
+      );
       continue;
     }
     if (typeof error === 'string' && error !== 'authorization_pending') {
