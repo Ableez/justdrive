@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { isRetryableStatus, withRetry } from '@juststore/shared';
+import { isRetryableStatus, withRetry, type RetryOptions } from '@juststore/shared';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Database } from '../db/client';
 import { googleConnections, users } from '../db/schema';
@@ -73,11 +73,24 @@ interface TokenResponse {
   id_token?: string;
 }
 
-async function postForm(url: string, body: Record<string, string>): Promise<TokenResponse> {
-  return withRetry(() => postFormOnce(url, body), { shouldRetry: shouldRetryGoogle });
+async function postForm(
+  url: string,
+  body: Record<string, string>,
+  retryOptions?: RetryOptions,
+): Promise<TokenResponse> {
+  const raw = await withRetry(() => postFormOnce(url, body), {
+    shouldRetry: shouldRetryGoogle,
+    ...retryOptions,
+  });
+  // The token endpoint is untyped JSON; the guard below is what makes the
+  // cast safe, and it runs outside the retry so a malformed 200 fails fast.
+  if (!raw || typeof raw.access_token !== 'string' || typeof raw.expires_in !== 'number') {
+    throw new GoogleError('Google returned an unexpected response. Try again shortly.', 502);
+  }
+  return raw;
 }
 
-async function postFormOnce(url: string, body: Record<string, string>): Promise<TokenResponse> {
+async function postFormOnce(url: string, body: Record<string, string>): Promise<TokenResponse | null> {
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -90,12 +103,15 @@ async function postFormOnce(url: string, body: Record<string, string>): Promise<
     if (response.status >= 500) {
       throw new GoogleError('Google is not responding. Try again shortly.', 503);
     }
+    if (response.status === 429) {
+      throw new GoogleError('Google is rate limiting requests. Try again shortly.', 429);
+    }
     if (detail?.error_description) {
       throw new GoogleError('Google rejected the request. Reconnect Drive and try again.', 403);
     }
     throw new GoogleError('Google rejected the request. Reconnect Drive and try again.', 403);
   }
-  return (await response.json()) as TokenResponse;
+  return (await response.json().catch(() => null)) as TokenResponse | null;
 }
 
 export async function exchangeCode(code: string, codeVerifier: string): Promise<TokenResponse> {
@@ -109,13 +125,20 @@ export async function exchangeCode(code: string, codeVerifier: string): Promise<
   });
 }
 
-export async function refreshAccessToken(refreshToken: string): Promise<TokenResponse> {
-  return postForm(TOKEN_ENDPOINT, {
-    refresh_token: refreshToken,
-    client_id: googleClientId(),
-    client_secret: googleClientSecret(),
-    grant_type: 'refresh_token',
-  });
+export async function refreshAccessToken(
+  refreshToken: string,
+  retryOptions?: RetryOptions,
+): Promise<TokenResponse> {
+  return postForm(
+    TOKEN_ENDPOINT,
+    {
+      refresh_token: refreshToken,
+      client_id: googleClientId(),
+      client_secret: googleClientSecret(),
+      grant_type: 'refresh_token',
+    },
+    retryOptions,
+  );
 }
 
 export async function revokeToken(token: string): Promise<void> {
@@ -130,7 +153,10 @@ async function revokeTokenOnce(token: string): Promise<void> {
     signal: AbortSignal.timeout(GOOGLE_TIMEOUT_MS),
   });
   if (!response.ok) {
-    throw new GoogleError('Google did not revoke the grant. It may already be gone.', 502);
+    throw new GoogleError(
+      'Google did not revoke the grant. It may already be gone.',
+      isRetryableStatus(response.status) ? 502 : 400,
+    );
   }
 }
 
@@ -254,7 +280,7 @@ async function refreshAndStore(
       };
     }
 
-    const tokens = await refreshAccessToken(refreshToken);
+    const tokens = await refreshAccessToken(refreshToken, { times: 1 });
     const expiresAt = new Date(Date.now() + tokens.expires_in * 1000);
 
     // Guarded so a disconnect landing mid-refresh cannot be undone.
@@ -282,9 +308,11 @@ async function driveRequest(
   accessToken: string,
   path: string,
   init: RequestInit = {},
+  retryOptions?: RetryOptions,
 ): Promise<Record<string, unknown>> {
   return withRetry(() => driveRequestOnce(accessToken, path, init), {
     shouldRetry: shouldRetryGoogle,
+    ...retryOptions,
   });
 }
 
@@ -304,11 +332,15 @@ async function driveRequestOnce(
   });
 
   if (!response.ok) {
-    const status = response.status === 404 ? 404 : 502;
+    // A 404 names a missing folder. A 429 is rate limiting and stays a 429 so
+    // callers can honor it; anything else is a transient Drive failure.
+    const status = response.status === 404 ? 404 : response.status === 429 ? 429 : 502;
     throw new GoogleError(
       response.status === 404
         ? 'That folder no longer exists in Drive.'
-        : 'Drive is not responding. Try again shortly.',
+        : response.status === 429
+          ? 'Drive is rate limiting requests. Try again shortly.'
+          : 'Drive is not responding. Try again shortly.',
       status,
     );
   }
@@ -337,14 +369,16 @@ export async function ensureRootFolder(
         `name='${ROOT_FOLDER_NAME}' and mimeType='${FOLDER_MIME}' and 'root' in parents and trashed=false`,
       )}&fields=files(id)&spaces=drive`,
     );
-    const files = listed.files as { id: string }[] | undefined;
+    const files = Array.isArray(listed.files)
+      ? (listed.files as { id?: unknown }[]).filter((file) => typeof file?.id === 'string')
+      : [];
+    // The create is not retried: a response lost after Drive committed would
+    // retry into a duplicate folder. A failure here surfaces and the next
+    // sign-in lists first, so it self-heals without littering Drive.
     const folderId =
-      files && files.length > 0
-        ? files[0].id
-        : ((await driveRequest(accessToken, '', {
-            method: 'POST',
-            body: JSON.stringify({ name: ROOT_FOLDER_NAME, mimeType: FOLDER_MIME }),
-          })).id as string);
+      files.length > 0
+        ? (files[0].id as string)
+        : await driveCreateRootFolder(accessToken);
 
     await tx
       .update(users)
@@ -352,6 +386,22 @@ export async function ensureRootFolder(
       .where(and(eq(users.id, userId), isNull(users.driveRootFolderId)));
     return folderId;
   });
+}
+
+async function driveCreateRootFolder(accessToken: string): Promise<string> {
+  const created = await driveRequest(
+    accessToken,
+    '',
+    {
+      method: 'POST',
+      body: JSON.stringify({ name: ROOT_FOLDER_NAME, mimeType: FOLDER_MIME }),
+    },
+    { times: 0 },
+  );
+  if (typeof created?.id !== 'string') {
+    throw new GoogleError('Drive did not return a folder. Try again shortly.', 502);
+  }
+  return created.id;
 }
 
 export function hasScope(scopes: string[]): boolean {

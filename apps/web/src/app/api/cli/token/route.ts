@@ -62,7 +62,9 @@ export async function POST(request: Request) {
         Response.json({ error: error.message, error_code: error.code }, { status }),
       );
     }
-    return oauthError('server_error');
+    // Unexpected failures (usually the database) are 5xx so the CLI retries
+    // the poll instead of killing the sign-in with a fatal protocol error.
+    return securityHeaders(Response.json({ error: 'server_error' }, { status: 500 }));
   }
 }
 

@@ -15,7 +15,13 @@ export class ApiError extends Error {
 }
 
 export function jsonError(message: string, status: number, extra: Record<string, unknown> = {}) {
-  return Response.json({ error: message, ...extra }, { status });
+  // The CLI honors the Retry-After header on 429s, so a body-only retry_after
+  // would leave it polling through the rate limit on local backoff.
+  const headers: Record<string, string> = {};
+  if (typeof extra.retry_after === 'number' && Number.isFinite(extra.retry_after)) {
+    headers['Retry-After'] = String(Math.max(0, Math.floor(extra.retry_after)));
+  }
+  return Response.json({ error: message, ...extra }, { status, headers });
 }
 
 export async function requireUserId(): Promise<string> {
