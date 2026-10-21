@@ -1,14 +1,22 @@
 import { drive_v3 } from 'googleapis';
 import fs from 'fs';
 import path from 'path';
-import { DriveFile, DRIVE_FIELDS, normalizePath } from '@juststore/shared';
+import { pipeline } from 'stream/promises';
+import {
+  DriveFile,
+  DRIVE_FIELDS,
+  JustStoreError,
+  PathNotFoundError,
+  normalizePath,
+} from '@juststore/shared';
 import { getDriveClient } from './client.js';
-import { resolvePath } from './resolver.js';
+import { resolvePath, resolvePathForWrite } from './resolver.js';
+import { invalidateCachedPath } from './cache.js';
 import { logActivity } from '../logger/index.js';
 
 export async function listFiles(drivePath: string): Promise<DriveFile[]> {
   const drive = await getDriveClient();
-  const parentId = drivePath ? await resolvePath(drivePath) : await resolvePath('');
+  const parentId = await resolvePath(drivePath);
 
   const response = await drive.files.list({
     q: `'${parentId}' in parents and trashed=false`,
@@ -20,15 +28,18 @@ export async function listFiles(drivePath: string): Promise<DriveFile[]> {
   return (response.data.files || []) as DriveFile[];
 }
 
+export const SHARE_ROLES = ['reader', 'commenter', 'writer', 'owner'] as const;
+export type ShareRole = (typeof SHARE_ROLES)[number];
+
 export async function uploadFile(
   localPath: string,
   drivePath?: string,
+  name?: string,
+  resolvedParentId?: string,
 ): Promise<DriveFile> {
   const drive = await getDriveClient();
-  const fileName = path.basename(localPath);
-  const parentId = drivePath
-    ? await resolvePath(drivePath)
-    : await resolvePath('');
+  const fileName = name || path.basename(localPath);
+  const parentId = resolvedParentId ?? (await resolvePath(drivePath ?? ''));
 
   const response = await drive.files.create({
     requestBody: {
@@ -43,9 +54,10 @@ export async function uploadFile(
 
   const file = response.data as DriveFile;
   await logActivity({
-    timestamp: new Date().toISOString(),
     operation: 'upload',
-    path: normalizePath(`${drivePath || ''}/${fileName}`),
+    path: `${drivePath ? normalizePath(drivePath) : ''}/${fileName}`.replace(/^\//, ''),
+    driveFileId: file.id,
+    bytes: Number(file.size) || undefined,
     status: 'success',
   });
 
@@ -66,21 +78,34 @@ export async function downloadFile(
     { responseType: 'stream' },
   );
 
-  return new Promise((resolve, reject) => {
-    const dest = fs.createWriteStream(destPath);
-    response.data
-      .on('end', async () => {
-        await logActivity({
-          timestamp: new Date().toISOString(),
-          operation: 'download',
-          path: normalizePath(drivePath),
-          status: 'success',
-        });
-        resolve(destPath);
-      })
-      .on('error', reject)
-      .pipe(dest);
+  // Streamed to a sibling path and renamed on success, so an interrupted
+  // download cannot destroy a file that was already at the destination.
+  const partial = `${destPath}.part`;
+  try {
+    await pipeline(response.data, fs.createWriteStream(partial));
+    await fs.promises.rename(partial, destPath);
+  } catch (error) {
+    await fs.promises.rm(partial, { force: true });
+    throw error;
+  }
+
+  await logActivity({
+    operation: 'download',
+    path: normalizePath(drivePath),
+    driveFileId: fileId,
+    status: 'success',
   });
+  return destPath;
+}
+
+export async function ensureDirectory(drivePath: string): Promise<string> {
+  try {
+    return await resolvePath(drivePath);
+  } catch (error) {
+    if (!(error instanceof PathNotFoundError)) throw error;
+    const created = await createDirectory(drivePath);
+    return created.id;
+  }
 }
 
 export async function createDirectory(drivePath: string): Promise<DriveFile> {
@@ -89,7 +114,7 @@ export async function createDirectory(drivePath: string): Promise<DriveFile> {
   const parts = normalized.split('/');
   const dirName = parts.pop()!;
   const parentPath = parts.join('/');
-  const parentId = parentPath ? await resolvePath(parentPath) : await resolvePath('');
+  const parentId = await resolvePath(parentPath);
 
   const response = await drive.files.create({
     requestBody: {
@@ -102,9 +127,9 @@ export async function createDirectory(drivePath: string): Promise<DriveFile> {
 
   const folder = response.data as DriveFile;
   await logActivity({
-    timestamp: new Date().toISOString(),
     operation: 'mkdir',
     path: normalized,
+    driveFileId: folder.id,
     status: 'success',
   });
 
@@ -121,7 +146,7 @@ export async function moveFile(
   const destParts = normalizedDest.split('/');
   const newName = destParts.pop()!;
   const destParentPath = destParts.join('/');
-  const newParentId = destParentPath ? await resolvePath(destParentPath) : await resolvePath('');
+  const newParentId = await resolvePath(destParentPath);
 
   const getResponse = await drive.files.get({
     fileId,
@@ -129,36 +154,55 @@ export async function moveFile(
   });
   const previousParents = getResponse.data.parents?.join(',') || '';
 
+  // Only the parent the file is actually leaving, so a file that is
+  // deliberately in two folders keeps its other one.
   const response = await drive.files.update({
     fileId,
     addParents: newParentId,
-    removeParents: previousParents,
+    removeParents: (getResponse.data.parents ?? []).includes(newParentId)
+      ? (getResponse.data.parents ?? []).filter((id) => id !== newParentId).join(',')
+      : previousParents,
     requestBody: { name: newName },
     fields: DRIVE_FIELDS,
   });
 
   const file = response.data as DriveFile;
+  await invalidateCachedPath(normalizePath(sourcePath), fileId);
   await logActivity({
-    timestamp: new Date().toISOString(),
     operation: 'mv',
     path: `${normalizePath(sourcePath)} -> ${normalizedDest}`,
+    driveFileId: fileId,
     status: 'success',
   });
 
   return file;
 }
 
-export async function removeFile(drivePath: string): Promise<void> {
-  const drive = await getDriveClient();
-  const fileId = await resolvePath(drivePath);
+export async function removeFile(
+  drivePath: string,
+  options: { permanent?: boolean } = {},
+): Promise<void> {
+  const normalized = normalizePath(drivePath);
+  if (!normalized) {
+    throw new JustStoreError('Refusing to remove the juststore root folder', 'INVALID_PATH');
+  }
 
-  await drive.files.delete({ fileId });
+  const drive = await getDriveClient();
+  const fileId = await resolvePathForWrite(normalized);
+
+  if (options.permanent) {
+    await drive.files.delete({ fileId });
+  } else {
+    await drive.files.update({ fileId, requestBody: { trashed: true } });
+  }
+  await invalidateCachedPath(normalized, fileId);
 
   await logActivity({
-    timestamp: new Date().toISOString(),
     operation: 'rm',
-    path: normalizePath(drivePath),
+    path: normalized,
+    driveFileId: fileId,
     status: 'success',
+    detail: options.permanent ? 'Deleted permanently' : 'Moved to trash',
   });
 }
 
@@ -167,12 +211,21 @@ export async function shareFile(
   email?: string,
   role: string = 'reader',
 ): Promise<string> {
+  if (!SHARE_ROLES.includes(role as ShareRole)) {
+    throw new JustStoreError(`Invalid role "${role}". Use one of: ${SHARE_ROLES.join(', ')}`, 'INVALID_ROLE');
+  }
+  if (role === 'owner' && !email) {
+    throw new JustStoreError('Transferring ownership requires --email', 'INVALID_ROLE');
+  }
+
   const drive = await getDriveClient();
-  const fileId = await resolvePath(drivePath);
+  const fileId = await resolvePathForWrite(normalizePath(drivePath));
 
   if (email) {
     await drive.permissions.create({
       fileId,
+      // Drive rejects role=owner unless the transfer is explicit.
+      transferOwnership: role === 'owner' ? true : undefined,
       requestBody: {
         type: 'user',
         role,
@@ -189,9 +242,9 @@ export async function shareFile(
   const link = response.data.webViewLink || '';
 
   await logActivity({
-    timestamp: new Date().toISOString(),
     operation: 'share',
     path: normalizePath(drivePath),
+    driveFileId: fileId,
     status: 'success',
     detail: email ? `Shared with ${email} (${role})` : 'Link shared',
   });

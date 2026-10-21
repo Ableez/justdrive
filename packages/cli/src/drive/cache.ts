@@ -1,67 +1,91 @@
 import fs from 'fs/promises';
 import path from 'path';
-import os from 'os';
-import { CONFIG_DIR, CACHE_FILE } from '@juststore/shared';
+import { getConfigDir } from '../config/paths.js';
+
+const CACHE_FILE = 'paths.json';
 
 interface CacheData {
   paths: Record<string, string>;
 }
 
-function getCachePath(): string {
-  return path.join(os.homedir(), CONFIG_DIR, CACHE_FILE);
+function cachePath(): string {
+  return path.join(getConfigDir(), CACHE_FILE);
 }
 
-export async function getCachedPath(drivePath: string): Promise<string | null> {
+async function read(): Promise<CacheData> {
+  const target = cachePath();
+
+  let raw: string;
   try {
-    const data = await readCache();
-    return data.paths[drivePath] || null;
+    raw = await fs.readFile(target, 'utf-8');
+  } catch (error) {
+    // A missing cache is normal. Anything else has to be said out loud, or a
+    // permission problem looks like an empty cache for the rest of the session.
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      console.error(`Could not read ${target}: ${(error as Error).message}`);
+    }
+    return { paths: {} };
+  }
+
+  const parsed = parseCache(raw);
+  if (!parsed) {
+    console.error(`The path cache at ${target} is corrupt and was ignored.`);
+    return { paths: {} };
+  }
+  return parsed;
+}
+
+function parseCache(raw: string): CacheData | null {
+  try {
+    const parsed = JSON.parse(raw) as CacheData;
+    if (!parsed.paths || typeof parsed.paths !== 'object') return null;
+    return parsed;
   } catch {
     return null;
   }
 }
 
+async function write(data: CacheData): Promise<void> {
+  const target = cachePath();
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.writeFile(target, JSON.stringify(data, null, 2));
+}
+
+export async function getCachedPath(drivePath: string): Promise<string | null> {
+  return (await read()).paths[drivePath] ?? null;
+}
+
 export async function setCachedPath(drivePath: string, fileId: string): Promise<void> {
-  const data = await readCache();
+  const data = await read();
   data.paths[drivePath] = fileId;
-  await writeCache(data);
+  await write(data);
 }
 
 export async function removeCachedPath(drivePath: string): Promise<void> {
-  const data = await readCache();
+  const data = await read();
   delete data.paths[drivePath];
-  await writeCache(data);
+  await write(data);
+}
+
+/**
+ * Drops every entry pointing at or below a removed or moved file: its path, its
+ * descendants' paths, and segment keys under its id.
+ */
+export async function invalidateCachedPath(drivePath: string, fileId: string): Promise<void> {
+  const data = await read();
+  for (const [key, value] of Object.entries(data.paths)) {
+    if (
+      value === fileId ||
+      key === drivePath ||
+      key.startsWith(`${drivePath}/`) ||
+      key.startsWith(`${fileId}/`)
+    ) {
+      delete data.paths[key];
+    }
+  }
+  await write(data);
 }
 
 export async function clearCache(): Promise<void> {
-  await writeCache({ paths: {} });
-}
-
-export async function loadConfig(): Promise<{
-  rootFolderId?: string;
-  userEmail?: string;
-}> {
-  try {
-    const data = await readCache();
-    return {
-      rootFolderId: data.paths['__root__'],
-      userEmail: data.paths['__user_email__'],
-    };
-  } catch {
-    return {};
-  }
-}
-
-async function readCache(): Promise<CacheData> {
-  try {
-    const raw = await fs.readFile(getCachePath(), 'utf-8');
-    return JSON.parse(raw);
-  } catch {
-    return { paths: {} };
-  }
-}
-
-async function writeCache(data: CacheData): Promise<void> {
-  const cachePath = getCachePath();
-  await fs.mkdir(path.dirname(cachePath), { recursive: true });
-  await fs.writeFile(cachePath, JSON.stringify(data, null, 2));
+  await write({ paths: {} });
 }

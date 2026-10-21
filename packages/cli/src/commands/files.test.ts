@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
+import { AuthError } from '@juststore/shared';
 
 vi.mock('../drive/operations.js', () => ({
   uploadFile: vi.fn(),
@@ -36,9 +37,13 @@ describe('filesCommand', () => {
     vi.clearAllMocks();
   });
 
+  afterEach(() => {
+    process.exitCode = undefined;
+  });
+
   it('has correct name and description', () => {
     expect(filesCommand.name()).toBe('files');
-    expect(filesCommand.description()).toBe('File operations');
+    expect(filesCommand.description()).toBe('Manage files in your Drive');
   });
 
   it('has all subcommands', () => {
@@ -127,5 +132,39 @@ describe('filesCommand', () => {
 
     expect(removeFile).toHaveBeenCalled();
     logSpy.mockRestore();
+  });
+
+  it('rm --permanent deletes permanently', async () => {
+    vi.mocked(removeFile).mockResolvedValue(undefined);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const rmCmd = filesCommand.commands.find((c) => c.name() === 'rm')!;
+
+    await rmCmd.parseAsync(['a.txt', '--permanent'], { from: 'user' });
+
+    expect(removeFile).toHaveBeenCalledWith('a.txt', { permanent: true });
+    expect(logSpy).toHaveBeenCalledWith('Deleted permanently: a.txt');
+    logSpy.mockRestore();
+  });
+
+  it.each([
+    ['ls', [], listFiles],
+    ['upload', ['local.txt'], uploadFile],
+    ['download', ['remote.txt'], downloadFile],
+    ['mkdir', ['dir'], createDirectory],
+    ['mv', ['a', 'b'], moveFile],
+    ['rm', ['a'], removeFile],
+  ] as const)('%s reports the failure and sets exit code 1', async (name, args, op) => {
+    vi.mocked(op).mockRejectedValue(new AuthError('Not signed in. Run: justdrive login'));
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const cmd = filesCommand.commands.find((c) => c.name() === name)!;
+    await cmd.parseAsync([...args], { from: 'user' });
+
+    expect(process.exitCode).toBe(1);
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.stringContaining('justdrive login'),
+    );
+    errorSpy.mockRestore();
   });
 });

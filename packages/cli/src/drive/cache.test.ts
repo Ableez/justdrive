@@ -1,98 +1,83 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-vi.mock('fs/promises', () => ({
-  default: {
-    readFile: vi.fn(),
-    writeFile: vi.fn(),
-    mkdir: vi.fn(),
-    unlink: vi.fn(),
-  },
-}));
-
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'fs/promises';
-import { getCachedPath, setCachedPath, clearCache, loadConfig } from './cache.js';
+import os from 'os';
+import path from 'path';
+import { clearCache, getCachedPath, invalidateCachedPath, setCachedPath } from './cache.js';
 
-describe('drive/cache', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+let home: string;
+const cacheFile = () => path.join(home, 'paths.json');
+
+beforeEach(async () => {
+  home = await fs.mkdtemp(path.join(os.tmpdir(), 'justdrive-cache-'));
+  process.env.JUSTDRIVE_CONFIG_DIR = home;
+});
+
+afterEach(async () => {
+  delete process.env.JUSTDRIVE_CONFIG_DIR;
+  await fs.rm(home, { recursive: true, force: true });
+});
+
+describe('path cache', () => {
+  it('round-trips a path', async () => {
+    await setCachedPath('photos', 'photos_id');
+    expect(await getCachedPath('photos')).toBe('photos_id');
   });
 
-  describe('getCachedPath', () => {
-    it('returns cached file ID', async () => {
-      vi.mocked(fs.readFile).mockResolvedValue(
-        JSON.stringify({ paths: { photos: 'id_123' } }),
-      );
-
-      const result = await getCachedPath('photos');
-      expect(result).toBe('id_123');
-    });
-
-    it('returns null for uncached path', async () => {
-      vi.mocked(fs.readFile).mockResolvedValue(
-        JSON.stringify({ paths: {} }),
-      );
-
-      const result = await getCachedPath('unknown');
-      expect(result).toBeNull();
-    });
-
-    it('returns null when cache file does not exist', async () => {
-      vi.mocked(fs.readFile).mockRejectedValue(new Error('ENOENT'));
-
-      const result = await getCachedPath('any');
-      expect(result).toBeNull();
-    });
+  it('returns null for an unknown path', async () => {
+    expect(await getCachedPath('nope')).toBeNull();
   });
 
-  describe('setCachedPath', () => {
-    it('writes path to cache', async () => {
-      vi.mocked(fs.readFile).mockResolvedValue(
-        JSON.stringify({ paths: {} }),
-      );
+  it('survives a corrupt cache file', async () => {
+    await fs.writeFile(cacheFile(), 'not json');
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-      await setCachedPath('photos', 'id_456');
+    expect(await getCachedPath('photos')).toBeNull();
 
-      expect(fs.writeFile).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.stringContaining('"photos": "id_456"'),
-      );
-    });
-
-    it('creates cache directory if needed', async () => {
-      vi.mocked(fs.readFile).mockRejectedValue(new Error('ENOENT'));
-
-      await setCachedPath('test', 'id_789');
-
-      expect(fs.mkdir).toHaveBeenCalledWith(expect.any(String), { recursive: true });
-    });
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('is corrupt'));
+    errorSpy.mockRestore();
   });
 
-  describe('clearCache', () => {
-    it('empties the cache', async () => {
-      await clearCache();
+  it('says nothing when there is no cache file yet', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-      expect(fs.writeFile).toHaveBeenCalledWith(
-        expect.any(String),
-        JSON.stringify({ paths: {} }, null, 2),
-      );
-    });
+    expect(await getCachedPath('photos')).toBeNull();
+
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
   });
 
-  describe('loadConfig', () => {
-    it('returns rootFolderId from cache', async () => {
-      vi.mocked(fs.readFile).mockResolvedValue(
-        JSON.stringify({ paths: { __root__: 'root_123' } }),
-      );
+  it('says something when the cache file cannot be read', async () => {
+    await fs.mkdir(cacheFile());
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-      const config = await loadConfig();
-      expect(config.rootFolderId).toBe('root_123');
-    });
+    expect(await getCachedPath('photos')).toBeNull();
 
-    it('returns empty object when cache missing', async () => {
-      vi.mocked(fs.readFile).mockRejectedValue(new Error('ENOENT'));
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Could not read'));
+    errorSpy.mockRestore();
+  });
 
-      const config = await loadConfig();
-      expect(config).toEqual({});
-    });
+  it('drops a removed file, its descendants and its segment keys', async () => {
+    await fs.writeFile(
+      cacheFile(),
+      JSON.stringify({
+        paths: {
+          a: 'a_id',
+          'a/b': 'b_id',
+          'a/b/c': 'c_id',
+          'a_id/b': 'b_id',
+          z: 'z_id',
+        },
+      }),
+    );
+
+    await invalidateCachedPath('a', 'a_id');
+
+    expect(JSON.parse(await fs.readFile(cacheFile(), 'utf-8')).paths).toEqual({ z: 'z_id' });
+  });
+
+  it('clears everything', async () => {
+    await setCachedPath('a', 'a_id');
+    await clearCache();
+    expect(await getCachedPath('a')).toBeNull();
   });
 });

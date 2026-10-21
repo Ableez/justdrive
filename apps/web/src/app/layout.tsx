@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { Toaster } from "sonner";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -13,11 +14,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "juststore — Google Drive from the CLI",
+  title: "justdrive — Google Drive from the CLI",
   description:
     "Manage Google Drive files from your terminal. Upload, download, browse, share, and organize files without leaving the command line.",
   openGraph: {
-    title: "juststore — Google Drive from the CLI",
+    title: "justdrive — Google Drive from the CLI",
     description:
       "Manage Google Drive files from your terminal. Upload, download, browse, share, and organize files without leaving the command line.",
   },
@@ -31,7 +32,10 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} antialiased`}
     >
-      <body>{children}</body>
+      <body>
+        {children}
+        <Toaster position="bottom-center" />
+      </body>
     </html>
   );
 }

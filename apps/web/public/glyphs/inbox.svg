@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="Inbox">
+  <rect x="4" y="4" width="88" height="88" rx="18" fill="#0f1117" stroke="#2a2f3a" stroke-width="2" />
+  <path d="M28 44v-4a4 4 0 0 1 4-4h32a4 4 0 0 1 4 4v4" fill="none" stroke="#e4e4e7" stroke-width="5" stroke-linecap="round" />
+  <path d="M24 46h14l4 8h16l4-8h14v16a6 6 0 0 1-6 6H30a6 6 0 0 1-6-6V46z" fill="none" stroke="#e4e4e7" stroke-width="5" stroke-linejoin="round" />
+  <path d="M48 24v16M42 34l6 6 6-6" fill="none" stroke="#7dd3fc" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

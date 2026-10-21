@@ -1,98 +1,77 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-vi.mock('fs/promises', () => ({
-  default: {
-    readFile: vi.fn(),
-    writeFile: vi.fn(),
-    mkdir: vi.fn(),
-  },
-}));
-
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'fs/promises';
-import { logActivity, getActivityLog } from './index.js';
-import type { ActivityLogEntry } from '@juststore/shared';
+import os from 'os';
+import path from 'path';
 
-describe('logger/index', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+const mocks = vi.hoisted(() => ({ sendEvents: vi.fn() }));
+vi.mock('../api/events.js', () => ({ sendEvents: mocks.sendEvents }));
+
+import { logActivity } from './index.js';
+import { pendingCount } from './outbox.js';
+
+let home: string;
+
+beforeEach(async () => {
+  home = await fs.mkdtemp(path.join(os.tmpdir(), 'justdrive-logger-'));
+  process.env.JUSTDRIVE_CONFIG_DIR = home;
+  mocks.sendEvents.mockReset();
+  mocks.sendEvents.mockResolvedValue(1);
+});
+
+afterEach(async () => {
+  delete process.env.JUSTDRIVE_CONFIG_DIR;
+  await fs.rm(home, { recursive: true, force: true });
+});
+
+/** logActivity delivers in the background, so let the microtasks drain. */
+async function settle() {
+  for (let i = 0; i < 50; i += 1) await new Promise((resolve) => setImmediate(resolve));
+}
+
+describe('logActivity', () => {
+  it('queues the event and delivers it', async () => {
+    await logActivity({
+      operation: 'upload',
+      path: 'docs/a.txt',
+      driveFileId: 'f1',
+      status: 'success',
+    });
+    await settle();
+
+    expect(mocks.sendEvents).toHaveBeenCalledWith([
+      expect.objectContaining({ type: 'upload', path: 'docs/a.txt', drive_file_id: 'f1' }),
+    ]);
+    expect(await pendingCount()).toBe(0);
   });
 
-  describe('logActivity', () => {
-    it('appends entry to existing log', async () => {
-      const existing: ActivityLogEntry[] = [
-        {
-          timestamp: '2024-01-01T00:00:00Z',
-          operation: 'login',
-          path: '/',
-          status: 'success',
-        },
-      ];
-      vi.mocked(fs.readFile).mockResolvedValue(JSON.stringify(existing));
+  it('normalises the path before sending', async () => {
+    await logActivity({ operation: 'rm', path: '/juststore/a/b.txt', status: 'success' });
+    await settle();
 
-      const newEntry: ActivityLogEntry = {
-        timestamp: '2024-01-02T00:00:00Z',
-        operation: 'upload',
-        path: '/test.txt',
-        status: 'success',
-      };
-
-      await logActivity(newEntry);
-
-      expect(fs.writeFile).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.stringContaining('"upload"'),
-      );
-      const written = JSON.parse(
-        vi.mocked(fs.writeFile).mock.calls[0][1] as string,
-      );
-      expect(written).toHaveLength(2);
-      expect(written[1]).toEqual(newEntry);
-    });
-
-    it('creates new log file when none exists', async () => {
-      vi.mocked(fs.readFile).mockRejectedValue(new Error('ENOENT'));
-
-      const entry: ActivityLogEntry = {
-        timestamp: '2024-01-01T00:00:00Z',
-        operation: 'login',
-        path: '/',
-        status: 'success',
-      };
-
-      await logActivity(entry);
-
-      expect(fs.mkdir).toHaveBeenCalledWith(expect.any(String), { recursive: true });
-      const written = JSON.parse(
-        vi.mocked(fs.writeFile).mock.calls[0][1] as string,
-      );
-      expect(written).toHaveLength(1);
-      expect(written[0]).toEqual(entry);
-    });
+    expect(mocks.sendEvents.mock.calls[0][0][0].path).toBe('a/b.txt');
   });
 
-  describe('getActivityLog', () => {
-    it('returns parsed log entries', async () => {
-      const entries: ActivityLogEntry[] = [
-        {
-          timestamp: '2024-01-01T00:00:00Z',
-          operation: 'login',
-          path: '/',
-          status: 'success',
-        },
-      ];
-      vi.mocked(fs.readFile).mockResolvedValue(JSON.stringify(entries));
+  it('keeps the event queued when the server cannot be reached', async () => {
+    mocks.sendEvents.mockRejectedValue(new Error('network down'));
 
-      const result = await getActivityLog();
+    await logActivity({ operation: 'download', path: 'a.txt', status: 'success' });
+    await settle();
 
-      expect(result).toEqual(entries);
-    });
+    expect(await pendingCount()).toBe(1);
+  });
 
-    it('returns empty array when file does not exist', async () => {
-      vi.mocked(fs.readFile).mockRejectedValue(new Error('ENOENT'));
+  it('never rejects when the queue cannot be written to disk', async () => {
+    // The file operation has already gone to Drive, so a local failure must
+    // not surface as a failed upload.
+    await fs.writeFile(path.join(home, 'outbox.json'), 'corrupt');
+    await fs.chmod(home, 0o500);
 
-      const result = await getActivityLog();
-
-      expect(result).toEqual([]);
-    });
+    try {
+      await expect(
+        logActivity({ operation: 'upload', path: 'a.txt', status: 'success' }),
+      ).resolves.toBeUndefined();
+    } finally {
+      await fs.chmod(home, 0o700);
+    }
   });
 });

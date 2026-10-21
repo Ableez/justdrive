@@ -1,0 +1,363 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../config/session.js', () => ({
+  loadSession: vi.fn(),
+  saveSession: vi.fn(),
+}));
+
+const mocks = vi.hoisted(() => ({ clearCache: vi.fn() }));
+vi.mock('../drive/cache.js', () => ({ clearCache: mocks.clearCache }));
+
+import { loadSession, saveSession } from '../config/session.js';
+import {
+  ackTransfer,
+  ApiError,
+  createTransfer,
+  fetchDriveToken,
+  fetchTransfers,
+  forgetSession,
+  getApiUrl,
+  listDevices,
+  requireSession,
+  revokeThisDevice,
+} from './client.js';
+import { AuthError } from '@juststore/shared';
+
+const session = {
+  version: 1 as const,
+  apiUrl: 'https://drive.astexlabs.com',
+  accessToken: 'jd_at_old',
+  accessExpiresAt: Date.now() + 3_600_000,
+  refreshToken: 'jd_rt_old',
+  deviceId: 'device-1',
+  deviceName: 'vps-1',
+};
+
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), { status });
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  forgetSession();
+  vi.mocked(saveSession).mockImplementation(async (next) => {
+    vi.mocked(loadSession).mockResolvedValue(next as never);
+  });
+  vi.mocked(loadSession).mockResolvedValue(session);
+  process.env.JUSTDRIVE_API_URL = 'https://drive.astexlabs.com';
+});
+
+afterEach(() => {
+  delete process.env.JUSTDRIVE_API_URL;
+  vi.unstubAllGlobals();
+});
+
+describe('api url', () => {
+  it('defaults to the hosted service', () => {
+    delete process.env.JUSTDRIVE_API_URL;
+    expect(getApiUrl()).toBe('https://drive.astexlabs.com');
+  });
+
+  it('strips a trailing slash from an override', () => {
+    process.env.JUSTDRIVE_API_URL = 'http://localhost:3000/';
+    expect(getApiUrl()).toBe('http://localhost:3000');
+  });
+});
+
+describe('requireSession', () => {
+  it('returns the stored session', async () => {
+    await expect(requireSession()).resolves.toMatchObject({ deviceName: 'vps-1' });
+  });
+
+  it('tells a signed-out user what to run', async () => {
+    vi.mocked(loadSession).mockResolvedValue(null);
+    await expect(requireSession()).rejects.toThrow(/justdrive login/);
+    await expect(requireSession()).rejects.toBeInstanceOf(AuthError);
+  });
+});
+
+describe('drive token', () => {
+  it('sends the device token and caches the root folder', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        access_token: 'ya29.google',
+        expires_at: 1_800_000_000_000,
+        root_folder_id: 'root-1',
+        email: 'a@b.com',
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchDriveToken()).resolves.toEqual({
+      access_token: 'ya29.google',
+      expiry_date: 1_800_000_000_000,
+    });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://drive.astexlabs.com/api/cli/drive-token');
+    expect(init.headers.Authorization).toBe('Bearer jd_at_old');
+    expect(saveSession).toHaveBeenCalledWith(
+      expect.objectContaining({ rootFolderId: 'root-1', email: 'a@b.com' }),
+    );
+  });
+
+  it('does not rewrite the session when nothing changed', async () => {
+    vi.mocked(loadSession).mockResolvedValue({ ...session, rootFolderId: 'root-1', email: 'a@b.com' });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({ access_token: 'ya29.x', expires_at: 1, root_folder_id: 'root-1', email: 'a@b.com' }),
+      ),
+    );
+
+    await fetchDriveToken();
+    expect(saveSession).not.toHaveBeenCalled();
+  });
+
+  it('rotates the device token and retries once after a 401', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ error: 'expired' }, 401))
+      .mockResolvedValueOnce(
+        jsonResponse({ access_token: 'jd_at_new', refresh_token: 'jd_rt_new', expires_in: 3600 }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ access_token: 'ya29.ok', expires_at: 2, root_folder_id: 'r' }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchDriveToken()).resolves.toMatchObject({ access_token: 'ya29.ok' });
+
+    expect(fetchMock.mock.calls[1][0]).toBe('https://drive.astexlabs.com/api/cli/token');
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
+      grant_type: 'refresh_token',
+      refresh_token: 'jd_rt_old',
+    });
+    expect(saveSession).toHaveBeenCalledWith(
+      expect.objectContaining({ accessToken: 'jd_at_new', refreshToken: 'jd_rt_new' }),
+    );
+    expect(fetchMock.mock.calls[2][1].headers.Authorization).toBe('Bearer jd_at_new');
+  });
+
+  it('never writes back a token the server already spent', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ error: 'expired' }, 401))
+      .mockResolvedValueOnce(
+        jsonResponse({ access_token: 'jd_at_new', refresh_token: 'jd_rt_new', expires_in: 3600 }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ access_token: 'ya29.ok', expires_at: 2, root_folder_id: 'r', email: 'a@b.com' }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchDriveToken();
+
+    // The last write is the one that decides what the next command sends, so
+    // it must carry the rotated pair, not the pre-401 one.
+    const written = vi.mocked(saveSession).mock.calls.at(-1)![0] as { refreshToken: string };
+    expect(written.refreshToken).toBe('jd_rt_new');
+    await expect(loadSession()).resolves.toMatchObject({ refreshToken: 'jd_rt_new' });
+  });
+
+  it('clears cached folder ids when the server reports a new root', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({ access_token: 'ya29.x', expires_at: 1, root_folder_id: 'root-2' }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchDriveToken();
+
+    expect(mocks.clearCache).toHaveBeenCalled();
+  });
+
+  it('refreshes only once when several requests fail at the same time', async () => {
+    // Two concurrent 401s would present the same refresh token twice, and the
+    // server treats the replay as theft and revokes the device session.
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/api/cli/token')) {
+        return jsonResponse({ access_token: 'jd_at_new', refresh_token: 'jd_rt_new', expires_in: 3600 });
+      }
+      return jsonResponse({ error: 'expired' }, 401);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await Promise.allSettled([listDevices(), listDevices(), listDevices()]);
+
+    const refreshes = fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/cli/token'));
+    expect(refreshes).toHaveLength(1);
+  });
+
+  it('surfaces the server message', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse({ error: 'Google Drive is not connected.' }, 409)),
+    );
+
+    await expect(fetchDriveToken()).rejects.toThrow('Google Drive is not connected.');
+  });
+
+  it('does not turn a non-JSON error body into a parse error', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(() => Promise.resolve(new Response('<html><body>Bad Gateway</body></html>', { status: 502 }))),
+    );
+
+    // A proxy error page must not become a SyntaxError quoting raw HTML.
+    await expect(listDevices()).rejects.toThrow('Request failed (502)');
+  });
+
+  it('refuses to persist a refresh response with no access token', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn()
+        .mockResolvedValueOnce(jsonResponse({ error: 'expired' }, 401))
+        .mockImplementation(() => Promise.resolve(jsonResponse({ ok: true }))),
+    );
+
+    // Writing this out would save a session with no access token, which bricks
+    // the credentials file for every later command.
+    await expect(listDevices()).rejects.toThrow(/did not return a session token/);
+    expect(saveSession).not.toHaveBeenCalled();
+  });
+
+  it('gives up after one retry instead of looping', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ error: 'revoked' }, 401));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchDriveToken()).rejects.toThrow(/revoked/);
+    // One drive-token attempt plus one refresh attempt, then it stops.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects with ApiError when the retry also fails without a message', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('', { status: 500 }))
+      .mockImplementation(() => Promise.resolve(new Response('', { status: 500 })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchDriveToken()).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+describe('listDevices', () => {
+  it('unwraps the device list', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({ devices: [{ id: 'd1', name: 'vps-1', is_self: true, last_seen_at: null }] }),
+      ),
+    );
+
+    await expect(listDevices()).resolves.toEqual([
+      { id: 'd1', name: 'vps-1', is_self: true, last_seen_at: null },
+    ]);
+  });
+});
+
+describe('transfers', () => {
+  it('retries a transient failure on idempotent reads', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('', { status: 503 }))
+      .mockImplementation(() => Promise.resolve(jsonResponse({ transfers: [] })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchTransfers(true)).resolves.toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry a transfer create that may have committed', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse({ error: 'boom' }, 500)));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      createTransfer({ drive_file_id: 'f1', name: 'a.tar.gz', to: 'vps-2' }),
+    ).rejects.toThrow('boom');
+    // One attempt: a retry could double-submit the transfer.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails fast on client errors without retrying', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse({ error: 'gone' }, 409)));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchTransfers(true)).rejects.toThrow('gone');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the server message when retries are exhausted', async () => {
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(jsonResponse({ error: 'backend on fire', error_code: 'E_FIRE' }, 500)),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const error = await fetchTransfers(true).catch((e) => e);
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error.message).toBe('backend on fire');
+    expect(error.code).toBe('E_FIRE');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('honors retry-after before retrying a rate limit', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response('', { status: 429, headers: { 'Retry-After': '1' } }),
+      )
+      .mockImplementation(() => Promise.resolve(jsonResponse({ transfers: [] })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const started = Date.now();
+    await expect(fetchTransfers(true)).resolves.toEqual([]);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(1000);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('fetches the inbox with the right query', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ transfers: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchTransfers(true);
+    expect(fetchMock.mock.calls[0][0]).toBe('https://drive.astexlabs.com/api/cli/transfers?inbox=1');
+  });
+
+  it('creates a transfer for a target device', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 't1' }, 201));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      createTransfer({ drive_file_id: 'f1', name: 'a.tar.gz', to: 'vps-2', bytes: 5 }),
+    ).resolves.toEqual({ id: 't1' });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      drive_file_id: 'f1',
+      name: 'a.tar.gz',
+      to: 'vps-2',
+      bytes: 5,
+    });
+  });
+
+  it('acks a transfer by id', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await ackTransfer('t 1');
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'https://drive.astexlabs.com/api/cli/transfers/t%201/ack',
+    );
+  });
+
+  it('revokes this device on logout', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await revokeThisDevice();
+    expect(fetchMock.mock.calls[0][0]).toBe('https://drive.astexlabs.com/api/cli/logout');
+    expect(fetchMock.mock.calls[0][1].method).toBe('POST');
+  });
+});

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 
 vi.mock('../drive/operations.js', () => ({
   shareFile: vi.fn(),
@@ -10,6 +10,10 @@ import { shareFile } from '../drive/operations.js';
 describe('shareCommand', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    process.exitCode = undefined;
   });
 
   it('has correct name and description', () => {
@@ -40,15 +44,13 @@ describe('shareCommand', () => {
     logSpy.mockRestore();
   });
 
-  it('exits with code 1 on error', async () => {
+  it('sets exit code 1 on error', async () => {
     vi.mocked(shareFile).mockRejectedValue(new Error('share failed'));
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     await shareCommand.parseAsync(['share', '/file.txt'], { from: 'user' });
 
-    expect(exitSpy).toHaveBeenCalledWith(1);
-    exitSpy.mockRestore();
+    expect(process.exitCode).toBe(1);
     errorSpy.mockRestore();
   });
 });

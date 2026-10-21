@@ -1,47 +1,28 @@
 import { Command } from 'commander';
-import { loadTokens } from '../auth/tokens.js';
-import { loadConfig, setCachedPath } from '../drive/cache.js';
-import { getUserEmail } from '../drive/client.js';
 import chalk from 'chalk';
+import { fetchDriveToken, getApiUrl, requireSession } from '../api/client.js';
+import { flush, pendingCount } from '../logger/outbox.js';
 
 export const statusCommand = new Command('status')
-  .description('Show current status')
+  .description('Show the current session and server reachability')
   .action(async () => {
+    const session = await requireSession();
+    console.log(`Machine: ${session.deviceName}`);
+    if (session.email) console.log(`Account: ${session.email}`);
+    // The live URL, which is what every request actually goes to.
+    console.log(`Server: ${getApiUrl()}`);
+
+    const pending = await pendingCount();
+    if (pending > 0) {
+      console.log(chalk.yellow(`${pending} activity events waiting to sync.`));
+    }
+
     try {
-      const tokens = await loadTokens();
-      const config = await loadConfig();
-
-      if (!tokens) {
-        console.log(chalk.red('Not authenticated. Run: juststore auth login'));
-        return;
-      }
-
-      console.log(chalk.green('Authenticated'));
-
-      // Fetch and cache email if not already cached
-      if (!config.userEmail) {
-        const email = await getUserEmail();
-        if (email) {
-          await setCachedPath('__user_email__', email);
-          console.log(`User: ${email}`);
-        }
-      } else {
-        console.log(`User: ${config.userEmail}`);
-      }
-
-      if (config.rootFolderId) {
-        console.log(`Root folder ID: ${config.rootFolderId}`);
-      }
-
-      if (tokens.expiry_date) {
-        const expiresAt = new Date(tokens.expiry_date);
-        const isExpired = expiresAt < new Date();
-        console.log(
-          `Token expires: ${expiresAt.toISOString()} ${isExpired ? chalk.red('(EXPIRED)') : chalk.green('(valid)')}`,
-        );
-      }
+      const token = await fetchDriveToken();
+      const minutes = Math.max(0, Math.round((token.expiry_date - Date.now()) / 60000));
+      console.log(chalk.green(`Drive reachable. Google token good for ${minutes} min.`));
+      await flush().catch(() => {});
     } catch (error) {
-      console.error('Status check failed:', error instanceof Error ? error.message : error);
-      process.exit(1);
+      console.log(chalk.red(`Drive unavailable: ${(error as Error).message}`));
     }
   });

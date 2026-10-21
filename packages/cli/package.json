@@ -1,38 +1,32 @@
 {
-  "name": "@astexlabs/juststore",
-  "version": "0.1.6",
+  "name": "justdrive",
+  "version": "0.2.0",
   "type": "module",
   "bin": {
-    "juststore": "dist/index.js"
+    "justdrive": "dist/index.js"
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsup && rm -rf ./dist/dashboard-spa && cp -r ../dashboard/dist ./dist/dashboard-spa",
+    "build": "tsup",
     "dev": "tsup --watch",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf dist",
-    "prepublishOnly": "npm run build && cp package.json package.json.local && node scripts/clean-pkg-for-publish.cjs",
-    "postpublish": "mv package.json.local package.json 2>/dev/null; true"
+    "clean": "rm -rf dist"
   },
   "dependencies": {
+    "chalk": "^5",
+    "cli-table3": "^0.6",
     "commander": "^12",
     "googleapis": "^144",
-    "express": "^4",
-    "multer": "^1",
-    "open": "^10",
-    "ora": "^8",
-    "chalk": "^5",
-    "cli-table3": "^0.6"
+    "ora": "^8"
   },
   "devDependencies": {
-    "tsup": "^8",
-    "@types/express": "^4",
-    "@types/multer": "^1",
-    "@types/node": "^20"
+    "@juststore/shared": "workspace:*",
+    "@types/node": "^20",
+    "tsup": "^8"
   }
 }

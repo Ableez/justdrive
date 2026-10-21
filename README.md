@@ -1,36 +1,60 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# justdrive
 
-## Getting Started
+Move files between machines through your own Google Drive. A machine signs in
+once, gets a short-lived Google token, and talks to Drive directly, so file
+bytes never pass through our servers. The web app only issues tokens and keeps
+track of devices and transfers.
 
-First, run the development server:
+## Install the CLI
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+curl -fsSL https://drive.astexlabs.com/install.sh | sh
+justdrive login
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Needs node 20 or newer. The script installs to `~/.local/bin` by default
+(`JUSTDRIVE_BIN_DIR` overrides it).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Layout
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Path | What it is |
+| --- | --- |
+| `apps/web` | Next.js app: sign-in, device approvals, activity, transfers |
+| `packages/cli` | The `justdrive` command line client |
+| `packages/shared` | Shared types, constants, URLs and helpers |
 
-## Learn More
+## Development
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+pnpm install
+pnpm dev        # runs every package
+pnpm build
+pnpm test
+pnpm lint
+pnpm typecheck
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+The web app listens on http://localhost:3000. `pnpm dev` builds
+`packages/shared` first; run `pnpm --filter @juststore/shared dev` to rebuild
+it while you work.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Environment
 
-## Deploy on Vercel
+| Variable | Used by | Meaning |
+| --- | --- | --- |
+| `DATABASE_URL` | web | Pooled Postgres connection string |
+| `DATABASE_URL_UNPOOLED` | web | Direct connection string, used by migrations |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | web | Google OAuth client |
+| `JUSTDRIVE_BASE_URL` | web | Public origin of the app, e.g. `https://drive.astexlabs.com` |
+| `TOKEN_ENCRYPTION_KEYS` | web | JSON map of base64 keys, e.g. `{"1":"<base64 32 bytes>"}` |
+| `JUSTDRIVE_API_URL` | cli | Base URL of the API, defaults to the hosted service |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Apply the schema with:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+pnpm --filter @juststore/web db:migrate
+```
+
+## License
+
+MIT
