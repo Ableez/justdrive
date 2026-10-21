@@ -70,4 +70,42 @@ describe("withRetry", () => {
     ).rejects.toThrow("fatal");
     expect(calls).toBe(1);
   });
+
+  it("attempts exactly once when times is 0", async () => {
+    let calls = 0;
+    await expect(
+      withRetry(
+        async () => {
+          calls += 1;
+          throw new Error("nope");
+        },
+        { times: 0, baseDelayMs: 1 },
+      ),
+    ).rejects.toThrow("nope");
+    expect(calls).toBe(1);
+  });
+
+  it("uses defaults when no options are given", async () => {
+    let calls = 0;
+    const result = await withRetry(async () => {
+      calls += 1;
+      return "defaulted";
+    });
+    expect(result).toBe("defaulted");
+    expect(calls).toBe(1);
+  });
+
+  it("preserves the thrown error object", async () => {
+    const thrown = new Error("same object");
+    let caught: unknown;
+    await withRetry(
+      async () => {
+        throw thrown;
+      },
+      { times: 1, baseDelayMs: 1 },
+    ).catch((error) => {
+      caught = error;
+    });
+    expect(caught).toBe(thrown);
+  });
 });
