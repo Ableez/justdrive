@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { GoogleGIcon } from "./google-g-icon";
+import { JustdriveLogo } from "./justdrive-logo";
 
 export function SiteHeader() {
   return (
     <header className="sticky top-0 z-50 border-b border-neutral-900 bg-neutral-950/80 backdrop-blur">
       <nav className="mx-auto flex max-w-5xl items-center justify-between px-8 py-3">
-        <Link href="/" className="font-semibold text-neutral-50">
+        <Link href="/" className="flex items-center gap-2 font-semibold text-neutral-50">
+          <JustdriveLogo className="h-6 w-auto" />
           Justdrive
         </Link>
         <div className="flex items-center gap-5 text-sm">
