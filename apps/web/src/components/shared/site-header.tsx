@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { GoogleGIcon } from "./google-g-icon";
 
 export function SiteHeader() {
   return (
@@ -21,7 +22,8 @@ export function SiteHeader() {
             Commands
           </Link>
           <Link href={"/auth/google?next=%2Fdashboard"}>
-            <button className="px-4 py-2 bg-white text-black rounded-xl cursor-pointer hover:scale-[0.98] hover:bg-white/80 font-semibold duration-300 ease-in-out transition-all">
+            <button className="flex items-center gap-2 px-4 py-2 bg-white text-black rounded-xl cursor-pointer hover:scale-[0.98] hover:bg-white/80 font-semibold duration-300 ease-in-out transition-all">
+              <GoogleGIcon className="size-4" />
               Sign in
             </button>
           </Link>
