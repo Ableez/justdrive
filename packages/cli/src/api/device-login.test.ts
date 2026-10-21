@@ -49,7 +49,6 @@ async function runLogin(code: DeviceCodeResponse, ms = 20_000) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.useFakeTimers();
   process.env.JUSTDRIVE_API_URL = 'https://drive.astexlabs.com';
 });
 
@@ -77,9 +76,45 @@ describe('requestDeviceCode', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 429 })));
     await expect(requestDeviceCode({})).rejects.toThrow(/Could not start sign-in/);
   });
+
+  it('retries a transient failure and returns the code', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('', { status: 503 }))
+      .mockImplementation(() => Promise.resolve(jsonResponse(deviceCode)));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(requestDeviceCode({})).resolves.toMatchObject({ user_code: 'BCDF-GHJK' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails fast when the server refuses the request', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 400 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(requestDeviceCode({})).rejects.toThrow(/Could not start sign-in \(400\)/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports an unreadable success body instead of a parse error', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('<html>nope</html>', { status: 200 })));
+    await expect(requestDeviceCode({})).rejects.toThrow(/unreadable response/);
+  });
+
+  it('reports a dropped connection without retrying forever', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError('fetch failed'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(requestDeviceCode({})).rejects.toThrow(/Could not start sign-in/);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
 });
 
 describe('completeDeviceLogin', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
   it('saves the session once the user approves', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(approved)));
 
@@ -137,5 +172,27 @@ describe('completeDeviceLogin', () => {
       vi.fn().mockResolvedValue(jsonResponse({ error: 'authorization_pending' })),
     );
     await expect(runLogin({ ...deviceCode, expires_in: 10 })).rejects.toThrow(/Timed out/);
+  });
+
+  it('recovers when a poll hits a transient server failure', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('', { status: 503 }))
+      .mockImplementation(() => Promise.resolve(jsonResponse(approved)));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(runLogin(deviceCode)).resolves.toMatchObject({ deviceId: 'd1' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives up after repeated poll failures instead of hanging', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(new Response('', { status: 500 })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(runLogin(deviceCode)).rejects.toThrow(/unavailable \(500\)/);
+    // One poll attempt, retried to exhaustion, then the sign-in fails.
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 });

@@ -257,6 +257,68 @@ describe('listDevices', () => {
 });
 
 describe('transfers', () => {
+  it('retries a transient failure on idempotent reads', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('', { status: 503 }))
+      .mockImplementation(() => Promise.resolve(jsonResponse({ transfers: [] })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchTransfers(true)).resolves.toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry a transfer create that may have committed', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse({ error: 'boom' }, 500)));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      createTransfer({ drive_file_id: 'f1', name: 'a.tar.gz', to: 'vps-2' }),
+    ).rejects.toThrow('boom');
+    // One attempt: a retry could double-submit the transfer.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails fast on client errors without retrying', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse({ error: 'gone' }, 409)));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchTransfers(true)).rejects.toThrow('gone');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the server message when retries are exhausted', async () => {
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(jsonResponse({ error: 'backend on fire', error_code: 'E_FIRE' }, 500)),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const error = await fetchTransfers(true).catch((e) => e);
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error.message).toBe('backend on fire');
+    expect(error.code).toBe('E_FIRE');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('honors retry-after before retrying a rate limit', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response('', { status: 429, headers: { 'Retry-After': '1' } }),
+      )
+      .mockImplementation(() => Promise.resolve(jsonResponse({ transfers: [] })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const started = Date.now();
+    await expect(fetchTransfers(true)).resolves.toEqual([]);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(1000);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it('fetches the inbox with the right query', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ transfers: [] }));
     vi.stubGlobal('fetch', fetchMock);
