@@ -20,6 +20,9 @@ importers:
       '@vitest/ui':
         specifier: ^3
         version: 3.2.7(vitest@3.2.7)
+      effect:
+        specifier: ^4.0.5
+        version: 4.0.5
       jsdom:
         specifier: ^25
         version: 25.0.1
