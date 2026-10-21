@@ -56,5 +56,5 @@
 
 This repository uses the Effect TypeScript library.
 
-Before writing any Effect code, first read `packages/shared/node_modules/effect/AGENTS.md`
+Before writing any Effect code, first read `node_modules/effect/AGENTS.md`
 completely, and follow the links in the file when required.
