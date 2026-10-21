@@ -1,26 +1,34 @@
 import { useId } from "react";
 
-export function JustdriveLogo({ className = "h-6 w-auto" }: { className?: string }) {
+export function JustdriveLogo({
+  className = "h-6 w-auto",
+  variant = "white",
+}: {
+  className?: string;
+  variant?: "white" | "gradient";
+}) {
   const gradientId = useId();
   return (
     <svg viewBox="0 0 172 212" fill="none" className={className} aria-hidden="true">
       <path
         d="M164.016 39C168.425 39.0001 172 42.5748 172 46.9844V111.903C172 167.185 127.185 212 71.9033 212C53.1791 212 38.0002 196.821 38 178.097V165.003C45.5328 168.219 53.8249 170 62.5332 170C102.003 170 134 138.003 134 98.5332V39H164.016ZM125 0C129.971 2.57702e-07 134 4.02944 134 9V39H71C52.7746 39 38 53.7746 38 72V165.003C15.6586 155.464 5.15361e-05 133.295 0 107.467V61C7.73213e-07 27.3106 27.3106 5.47621e-07 61 0H125Z"
-        fill={`url(#${gradientId})`}
+        fill={variant === "gradient" ? `url(#${gradientId})` : "white"}
       />
-      <defs>
-        <linearGradient
-          id={gradientId}
-          x1="99"
-          y1="20.5"
-          x2="94.5"
-          y2="223.5"
-          gradientUnits="userSpaceOnUse"
-        >
-          <stop stopColor="#376CFF" />
-          <stop offset="1" stopColor="#BFE0FF" />
-        </linearGradient>
-      </defs>
+      {variant === "gradient" && (
+        <defs>
+          <linearGradient
+            id={gradientId}
+            x1="99"
+            y1="20.5"
+            x2="94.5"
+            y2="223.5"
+            gradientUnits="userSpaceOnUse"
+          >
+            <stop stopColor="#376CFF" />
+            <stop offset="1" stopColor="#BFE0FF" />
+          </linearGradient>
+        </defs>
+      )}
     </svg>
   );
 }
