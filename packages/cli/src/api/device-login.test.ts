@@ -13,8 +13,8 @@ import { completeDeviceLogin, requestDeviceCode, type DeviceCodeResponse } from 
 const deviceCode: DeviceCodeResponse = {
   device_code: 'device-code-abc',
   user_code: 'BCDF-GHJK',
-  verification_uri: 'https://drive.astexlabs.com/device',
-  verification_uri_complete: 'https://drive.astexlabs.com/device?user_code=BCDF-GHJK',
+  verification_uri: 'https://justdrive.astexlabs.com/device',
+  verification_uri_complete: 'https://justdrive.astexlabs.com/device?user_code=BCDF-GHJK',
   expires_in: 600,
   interval: 5,
 };
@@ -49,7 +49,7 @@ async function runLogin(code: DeviceCodeResponse, ms = 20_000) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  process.env.JUSTDRIVE_API_URL = 'https://drive.astexlabs.com';
+  process.env.JUSTDRIVE_API_URL = 'https://justdrive.astexlabs.com';
 });
 
 afterEach(() => {
@@ -125,7 +125,7 @@ describe('completeDeviceLogin', () => {
       refreshToken: 'jd_rt_a',
       deviceId: 'd1',
       deviceName: 'vps-2',
-      apiUrl: 'https://drive.astexlabs.com',
+      apiUrl: 'https://justdrive.astexlabs.com',
     });
     expect(saveSession).toHaveBeenCalledWith(session);
   });

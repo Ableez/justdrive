@@ -25,7 +25,7 @@ import { AuthError } from '@juststore/shared';
 
 const session = {
   version: 1 as const,
-  apiUrl: 'https://drive.astexlabs.com',
+  apiUrl: 'https://justdrive.astexlabs.com',
   accessToken: 'jd_at_old',
   accessExpiresAt: Date.now() + 3_600_000,
   refreshToken: 'jd_rt_old',
@@ -44,7 +44,7 @@ beforeEach(() => {
     vi.mocked(loadSession).mockResolvedValue(next as never);
   });
   vi.mocked(loadSession).mockResolvedValue(session);
-  process.env.JUSTDRIVE_API_URL = 'https://drive.astexlabs.com';
+  process.env.JUSTDRIVE_API_URL = 'https://justdrive.astexlabs.com';
 });
 
 afterEach(() => {
@@ -55,7 +55,7 @@ afterEach(() => {
 describe('api url', () => {
   it('defaults to the hosted service', () => {
     delete process.env.JUSTDRIVE_API_URL;
-    expect(getApiUrl()).toBe('https://drive.astexlabs.com');
+    expect(getApiUrl()).toBe('https://justdrive.astexlabs.com');
   });
 
   it('strips a trailing slash from an override', () => {
@@ -94,7 +94,7 @@ describe('drive token', () => {
     });
 
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('https://drive.astexlabs.com/api/cli/drive-token');
+    expect(url).toBe('https://justdrive.astexlabs.com/api/cli/drive-token');
     expect(init.headers.Authorization).toBe('Bearer jd_at_old');
     expect(saveSession).toHaveBeenCalledWith(
       expect.objectContaining({ rootFolderId: 'root-1', email: 'a@b.com' }),
@@ -128,7 +128,7 @@ describe('drive token', () => {
 
     await expect(fetchDriveToken()).resolves.toMatchObject({ access_token: 'ya29.ok' });
 
-    expect(fetchMock.mock.calls[1][0]).toBe('https://drive.astexlabs.com/api/cli/token');
+    expect(fetchMock.mock.calls[1][0]).toBe('https://justdrive.astexlabs.com/api/cli/token');
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
       grant_type: 'refresh_token',
       refresh_token: 'jd_rt_old',
@@ -324,7 +324,7 @@ describe('transfers', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await fetchTransfers(true);
-    expect(fetchMock.mock.calls[0][0]).toBe('https://drive.astexlabs.com/api/cli/transfers?inbox=1');
+    expect(fetchMock.mock.calls[0][0]).toBe('https://justdrive.astexlabs.com/api/cli/transfers?inbox=1');
   });
 
   it('creates a transfer for a target device', async () => {
@@ -348,7 +348,7 @@ describe('transfers', () => {
 
     await ackTransfer('t 1');
     expect(fetchMock.mock.calls[0][0]).toBe(
-      'https://drive.astexlabs.com/api/cli/transfers/t%201/ack',
+      'https://justdrive.astexlabs.com/api/cli/transfers/t%201/ack',
     );
   });
 
@@ -357,7 +357,7 @@ describe('transfers', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await revokeThisDevice();
-    expect(fetchMock.mock.calls[0][0]).toBe('https://drive.astexlabs.com/api/cli/logout');
+    expect(fetchMock.mock.calls[0][0]).toBe('https://justdrive.astexlabs.com/api/cli/logout');
     expect(fetchMock.mock.calls[0][1].method).toBe('POST');
   });
 });

@@ -29,14 +29,14 @@ beforeEach(() => {
   forgetSession();
   vi.mocked(loadSession).mockResolvedValue({
     version: 1,
-    apiUrl: 'https://drive.astexlabs.com',
+    apiUrl: 'https://justdrive.astexlabs.com',
     accessToken: 'jd_at_a',
     accessExpiresAt: Date.now() + 3_600_000,
     refreshToken: 'jd_rt_a',
     deviceId: 'd1',
     deviceName: 'vps-1',
   });
-  process.env.JUSTDRIVE_API_URL = 'https://drive.astexlabs.com';
+  process.env.JUSTDRIVE_API_URL = 'https://justdrive.astexlabs.com';
 });
 
 afterEach(() => {
@@ -60,7 +60,7 @@ describe('sendEvents', () => {
     expect(await sendEvents([event])).toBe(1);
 
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('https://drive.astexlabs.com/api/cli/events');
+    expect(url).toBe('https://justdrive.astexlabs.com/api/cli/events');
     expect(init.headers.Authorization).toBe('Bearer jd_at_a');
     expect(JSON.parse(init.body).events[0]).toEqual({
       id: event.id,
