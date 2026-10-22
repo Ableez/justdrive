@@ -13,14 +13,21 @@
   "devDependencies": {
     "@testing-library/jest-dom": "^6",
     "@testing-library/react": "^16",
-    "@vitest/coverage-v8": "^3",
-    "@vitest/ui": "^3",
-    "effect": "^4.0.5",
+    "@vitest/coverage-v8": "^4.1.12",
+    "@vitest/ui": "^4.1.12",
+    "effect": "^4.0.6",
     "jsdom": "^25",
     "supabase": "^2.121.0",
     "turbo": "^2",
     "typescript": "^5",
-    "vitest": "^3"
+    "vitest": "^4.1.12",
+    "vite": "^6.4.4"
   },
-  "packageManager": "pnpm@9.0.0"
+  "packageManager": "pnpm@9.0.0",
+  "pnpm": {
+    "overrides": {
+      "braces": "file:./patches/braces",
+      "@esbuild-kit/core-utils>esbuild": ">=0.25.0 <0.26.0"
+    }
+  }
 }

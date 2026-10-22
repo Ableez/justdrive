@@ -27,6 +27,6 @@
   "devDependencies": {
     "@juststore/shared": "workspace:*",
     "@types/node": "^20",
-    "tsup": "^8"
+    "tsup": "^9.0.0"
   }
 }
