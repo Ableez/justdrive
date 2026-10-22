@@ -3,7 +3,8 @@
   "version": "0.2.0",
   "type": "module",
   "bin": {
-    "justdrive": "dist/index.js"
+    "justdrive": "dist/index.js",
+    "jd": "dist/index.js"
   },
   "files": [
     "dist"
@@ -21,7 +22,6 @@
     "chalk": "^5",
     "cli-table3": "^0.6",
     "commander": "^12",
-    "googleapis": "^144",
     "ora": "^8"
   },
   "devDependencies": {

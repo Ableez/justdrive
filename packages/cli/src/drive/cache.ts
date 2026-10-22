@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'fs/promises';
 import path from 'path';
 import { getConfigDir } from '../config/paths.js';
@@ -47,8 +48,10 @@ function parseCache(raw: string): CacheData | null {
 
 async function write(data: CacheData): Promise<void> {
   const target = cachePath();
-  await fs.mkdir(path.dirname(target), { recursive: true });
-  await fs.writeFile(target, JSON.stringify(data, null, 2));
+  await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
+  const temp = `${target}.${crypto.randomUUID()}.tmp`;
+  await fs.writeFile(temp, JSON.stringify(data, null, 2), { mode: 0o600 });
+  await fs.rename(temp, target);
 }
 
 export async function getCachedPath(drivePath: string): Promise<string | null> {
