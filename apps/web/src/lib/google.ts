@@ -8,6 +8,7 @@ import {
   ACCESS_TOKEN_REFRESH_SKEW_MS,
   DRIVE_FILE_SCOPE,
   ROOT_FOLDER_NAME,
+  LEGACY_ROOT_FOLDER_NAME,
   SIGN_IN_SCOPES,
 } from './constants';
 import { baseUrl, googleClientId, googleClientSecret } from './env';
@@ -363,21 +364,35 @@ export async function ensureRootFolder(
     const current = await tx.query.users.findFirst({ where: eq(users.id, userId) });
     if (current?.driveRootFolderId) return current.driveRootFolderId;
 
+    // Prefer the new folder name, but keep supporting the legacy one so
+    // existing users keep their data.
     const listed = await driveRequest(
       accessToken,
       `?q=${encodeURIComponent(
-        `name='${ROOT_FOLDER_NAME}' and mimeType='${FOLDER_MIME}' and 'root' in parents and trashed=false`,
-      )}&fields=files(id)&spaces=drive`,
+        `(name='${ROOT_FOLDER_NAME}' or name='${LEGACY_ROOT_FOLDER_NAME}') and mimeType='${FOLDER_MIME}' and 'root' in parents and trashed=false`,
+      )}&fields=files(id,name)&spaces=drive`,
     );
     const files = Array.isArray(listed.files)
-      ? (listed.files as { id?: unknown }[]).filter((file) => typeof file?.id === 'string')
+      ? (listed.files as { id?: unknown; name?: unknown }[]).filter((file) => typeof file?.id === 'string')
       : [];
+    const preferred =
+      files.find((file) => file.name === ROOT_FOLDER_NAME) ||
+      files.find((file) => file.name === LEGACY_ROOT_FOLDER_NAME);
+    // Migrate a legacy folder to the new name when possible.
+    if (preferred && preferred.name === LEGACY_ROOT_FOLDER_NAME) {
+      await driveRequest(
+        accessToken,
+        `/${preferred.id}`,
+        { method: 'PATCH', body: JSON.stringify({ name: ROOT_FOLDER_NAME }) },
+        { times: 0 },
+      ).catch(() => {});
+    }
     // The create is not retried: a response lost after Drive committed would
     // retry into a duplicate folder. A failure here surfaces and the next
     // sign-in lists first, so it self-heals without littering Drive.
     const folderId =
-      files.length > 0
-        ? (files[0].id as string)
+      preferred && typeof preferred.id === 'string'
+        ? preferred.id
         : await driveCreateRootFolder(accessToken);
 
     await tx

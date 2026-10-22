@@ -1,4 +1,4 @@
-export { ROOT_FOLDER_NAME } from '@juststore/shared';
+export { ROOT_FOLDER_NAME, LEGACY_ROOT_FOLDER_NAME } from '@juststore/shared';
 
 export const DRIVE_FILE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 export const SIGN_IN_SCOPES = ['openid', 'email', DRIVE_FILE_SCOPE];
