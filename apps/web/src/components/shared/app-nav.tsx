@@ -10,23 +10,23 @@ const links = [
 
 export function AppNav({ email }: { email: string }) {
   return (
-    <header className="border-b border-zinc-200 dark:border-zinc-800">
-      <nav className="mx-auto flex max-w-4xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 text-sm">
-        <Link href="/dashboard" className="font-semibold">
+    <header className="border-b border-border">
+      <nav className="mx-auto flex max-w-4xl flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3 text-sm">
+        <Link href="/dashboard" className="font-semibold tracking-tight">
           justdrive
         </Link>
         {links.map((link) => (
           <Link
             key={link.href}
             href={link.href}
-            className="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+            className="text-muted-foreground transition-colors hover:text-foreground"
           >
             {link.label}
           </Link>
         ))}
-        <span className="ml-auto hidden text-zinc-500 sm:inline">{email}</span>
+        <span className="ml-auto hidden text-muted-foreground sm:inline">{email}</span>
         <form action="/logout" method="post">
-          <button type="submit" className="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400">
+          <button type="submit" className="text-muted-foreground transition-colors hover:text-foreground">
             Sign out
           </button>
         </form>
