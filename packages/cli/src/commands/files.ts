@@ -12,11 +12,9 @@ import { withProgress } from '../output/progress.js';
 import { formatJson } from '../output/json.js';
 import { describeError } from '../output/errors.js';
 
-export const filesCommand = new Command('files')
-  .description('Manage files in your Drive');
+export const filesCommand = new Command('files').description('Manage files in your Drive');
 
-filesCommand
-  .command('ls')
+export const lsCommand = new Command('ls')
   .description('List files in a directory')
   .argument('[path]', 'Directory path', '')
   .option('--json', 'Output as JSON')
@@ -35,16 +33,13 @@ filesCommand
     }
   });
 
-filesCommand
-  .command('upload')
+export const uploadCommand = new Command('upload')
   .description('Upload a file')
   .argument('<localPath>', 'Local file path')
   .argument('[drivePath]', 'Destination path in Drive')
   .action(async (localPath: string, drivePath?: string) => {
     try {
-      const result = await withProgress('Uploading...', () =>
-        uploadFile(localPath, drivePath),
-      );
+      const result = await withProgress('Uploading...', () => uploadFile(localPath, drivePath));
       console.log(`Uploaded: ${result.name} (${result.id})`);
     } catch (error) {
       console.error('Upload failed:', describeError(error));
@@ -53,16 +48,13 @@ filesCommand
     }
   });
 
-filesCommand
-  .command('download')
+export const downloadCommand = new Command('download')
   .description('Download a file')
   .argument('<drivePath>', 'Drive file path')
   .argument('[localPath]', 'Local destination path')
   .action(async (drivePath: string, localPath?: string) => {
     try {
-      const result = await withProgress('Downloading...', () =>
-        downloadFile(drivePath, localPath),
-      );
+      const result = await withProgress('Downloading...', () => downloadFile(drivePath, localPath));
       console.log(`Downloaded: ${result}`);
     } catch (error) {
       console.error('Download failed:', describeError(error));
@@ -71,8 +63,7 @@ filesCommand
     }
   });
 
-filesCommand
-  .command('mkdir')
+export const mkdirCommand = new Command('mkdir')
   .description('Create a directory')
   .argument('<path>', 'Directory path')
   .action(async (path: string) => {
@@ -86,8 +77,7 @@ filesCommand
     }
   });
 
-filesCommand
-  .command('mv')
+export const mvCommand = new Command('mv')
   .description('Move/rename a file')
   .argument('<source>', 'Source path')
   .argument('<dest>', 'Destination path')
@@ -102,8 +92,7 @@ filesCommand
     }
   });
 
-filesCommand
-  .command('rm')
+export const rmCommand = new Command('rm')
   .description('Move a file to the Drive trash')
   .argument('<path>', 'File path')
   .option('--permanent', 'Delete permanently instead of moving to trash')
@@ -117,3 +106,10 @@ filesCommand
       return;
     }
   });
+
+filesCommand.addCommand(lsCommand);
+filesCommand.addCommand(uploadCommand);
+filesCommand.addCommand(downloadCommand);
+filesCommand.addCommand(mkdirCommand);
+filesCommand.addCommand(mvCommand);
+filesCommand.addCommand(rmCommand);
