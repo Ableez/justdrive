@@ -8,7 +8,7 @@ track of devices and transfers.
 ## Install the CLI
 
 ```bash
-curl -fsSL https://drive.astexlabs.com/install.sh | sh
+curl -fsSL https://justdrive.astexlabs.com/install.sh | sh
 justdrive login
 ```
 
@@ -45,7 +45,7 @@ it while you work.
 | `DATABASE_URL` | web | Pooled Postgres connection string |
 | `DATABASE_URL_UNPOOLED` | web | Direct connection string, used by migrations |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | web | Google OAuth client |
-| `JUSTDRIVE_BASE_URL` | web | Public origin of the app, e.g. `https://drive.astexlabs.com` |
+| `JUSTDRIVE_BASE_URL` | web | Public origin of the app, e.g. `https://justdrive.astexlabs.com` |
 | `TOKEN_ENCRYPTION_KEYS` | web | JSON map of base64 keys, e.g. `{"1":"<base64 32 bytes>"}` |
 | `JUSTDRIVE_API_URL` | cli | Base URL of the API, defaults to the hosted service |
 

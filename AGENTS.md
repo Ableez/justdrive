@@ -1,6 +1,6 @@
 ## Project
 
-- Monorepo: `apps/web` (Next.js 16 web app at `drive.astexlabs.com`), `packages/cli` (`justdrive`), `packages/shared` (types, constants, urls, utils, errors).
+- Monorepo: `apps/web` (Next.js 16 web app at `justdrive.astexlabs.com`), `packages/cli` (`justdrive`), `packages/shared` (types, constants, urls, utils, errors).
 - Core objective: move files between machines through the user's Google Drive. Machines get short-lived Google tokens and talk to Drive directly, so file bytes never pass through our servers.
 - No fancy extras. Keep scope to what the transfer flow needs.
 

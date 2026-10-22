@@ -1,15 +1,15 @@
 # justdrive cloud: plan
 
 **Status:** implemented · **Date:** 2026-09-26
-**Web app:** `https://drive.astexlabs.com` (Next.js, `apps/web`) · **CLI:** `justdrive` (`packages/cli`)
+**Web app:** `https://justdrive.astexlabs.com` (Next.js, `apps/web`) · **CLI:** `justdrive` (`packages/cli`)
 
 ## 1. Goal
 
 Move files between VPS/remote machines quickly, using the user's Google Drive as storage, with one
 place to manage it all.
 
-- The user connects their Google account **once**, on drive.astexlabs.com.
-- On any machine, `justdrive login` authenticates against drive.astexlabs.com, **not** Google.
+- The user connects their Google account **once**, on justdrive.astexlabs.com.
+- On any machine, `justdrive login` authenticates against justdrive.astexlabs.com, **not** Google.
 - The profile shows every machine, full activity history, and lets the user **revoke any machine**.
 
 ### Decisions already made
@@ -17,13 +17,13 @@ place to manage it all.
 | Decision | Choice |
 |---|---|
 | Where file data flows | **Token vending**: machines get short-lived Google access tokens and talk to Drive directly. File data never passes through our servers. |
-| Name / domain | **justdrive**, served at `drive.astexlabs.com` |
+| Name / domain | **justdrive**, served at `justdrive.astexlabs.com` |
 | Standalone/local mode (own Google client, local login, local dashboard) | **Dropped** |
 
 ## 2. Architecture
 
 ```
- Browser (once)                    drive.astexlabs.com                       Google
+ Browser (once)                    justdrive.astexlabs.com                       Google
  ──────────────                    ───────────────────                       ──────
  Sign in with Google  ──────────►  keeps the Google refresh token,     ◄──►  OAuth (web client)
  (+ Drive consent)                 encrypted; never sent to machines
@@ -144,8 +144,8 @@ justdrive receive [id|--all] [dir]  download + ack
   `client.refreshHandler = () => fetchDriveToken()`. google-auth-library v9 supports this (confirmed in the
   installed version), so every existing Drive operation keeps working unchanged. It gets a fresh token from the
   server whenever the current one is near expiry.
-- New `api/client.ts`: calls to drive.astexlabs.com with automatic device-token refresh and rotation.
-  Base URL defaults to `https://drive.astexlabs.com`, overridable with `JUSTDRIVE_API_URL` for local dev and staging.
+- New `api/client.ts`: calls to justdrive.astexlabs.com with automatic device-token refresh and rotation.
+  Base URL defaults to `https://justdrive.astexlabs.com`, overridable with `JUSTDRIVE_API_URL` for local dev and staging.
 - Storage: `~/.config/justdrive/credentials.json` (`0600`, atomic write). Reuse today's `writeSecureFile`.
   Ignore the old `~/.juststore` and tell users to run `justdrive login` once.
 - `resolver.ts` takes `root_folder_id` from the server instead of searching for it.
@@ -175,9 +175,9 @@ no longer ships any Google client credentials.
 ## 8. Google Cloud setup and verification
 
 1. Create a **Web application** OAuth client in the justdrive project. Redirect URI:
-   `https://drive.astexlabs.com/auth/google/callback`. Use a separate client for local dev (`http://localhost:3000/...`).
+   `https://justdrive.astexlabs.com/auth/google/callback`. Use a separate client for local dev (`http://localhost:3000/...`).
 2. Verify **astexlabs.com** in Google Search Console (authorized domains must be the top private domain).
-3. Consent screen: app name *justdrive*, homepage `https://drive.astexlabs.com`, privacy policy and terms
+3. Consent screen: app name *justdrive*, homepage `https://justdrive.astexlabs.com`, privacy policy and terms
    pages hosted there, support email.
 4. Scopes: `openid`, `email`, `drive.file`. All non-sensitive, so only **brand verification** is needed
    (typically a few days). No security assessment.
@@ -204,7 +204,7 @@ Each milestone ships with tests. M1–M5 together are the MVP.
 TOKEN_ENCRYPTION_KEYS   {"1":"<base64 32 bytes>"}   rotate by adding "2"
 GOOGLE_CLIENT_ID        from the Web application OAuth client
 GOOGLE_CLIENT_SECRET    from the same client
-JUSTDRIVE_BASE_URL      https://drive.astexlabs.com
+JUSTDRIVE_BASE_URL      https://justdrive.astexlabs.com
 DATABASE_URL            pooled (runtime)
 DATABASE_URL_UNPOOLED   direct, used by drizzle-kit only
 ```
