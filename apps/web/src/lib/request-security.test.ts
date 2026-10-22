@@ -4,14 +4,14 @@ import { isSameOrigin, securityHeaders } from './request-security';
 const PREVIOUS = process.env.JUSTDRIVE_BASE_URL;
 
 beforeEach(() => {
-  process.env.JUSTDRIVE_BASE_URL = 'https://drive.astexlabs.com';
+  process.env.JUSTDRIVE_BASE_URL = 'https://justdrive.astexlabs.com';
 });
 
 afterEach(() => {
   process.env.JUSTDRIVE_BASE_URL = PREVIOUS;
 });
 
-function post(origin: string | null, url = 'https://drive.astexlabs.com/logout') {
+function post(origin: string | null, url = 'https://justdrive.astexlabs.com/logout') {
   const headers = new Headers();
   if (origin) headers.set('origin', origin);
   return new Request(url, { method: 'POST', headers });
@@ -19,7 +19,7 @@ function post(origin: string | null, url = 'https://drive.astexlabs.com/logout')
 
 describe('same-origin check', () => {
   it('accepts the configured app host', () => {
-    expect(isSameOrigin(post('https://drive.astexlabs.com'))).toBe(true);
+    expect(isSameOrigin(post('https://justdrive.astexlabs.com'))).toBe(true);
   });
 
   it('accepts loopback in local development', () => {
@@ -30,17 +30,17 @@ describe('same-origin check', () => {
   it('ignores how Next built request.url, which differs by deployment', () => {
     // On some deployments request.url is the internal bind host, on others it
     // is the Host header. The check must not depend on either.
-    expect(isSameOrigin(post('https://drive.astexlabs.com', 'http://0.0.0.0:3000/logout'))).toBe(true);
+    expect(isSameOrigin(post('https://justdrive.astexlabs.com', 'http://0.0.0.0:3000/logout'))).toBe(true);
   });
 
   it('rejects another site', () => {
     expect(isSameOrigin(post('https://evil.example'))).toBe(false);
-    expect(isSameOrigin(post('https://drive.astexlabs.com.evil.example'))).toBe(false);
-    expect(isSameOrigin(post('https://evil.example', 'https://drive.astexlabs.com/logout'))).toBe(false);
+    expect(isSameOrigin(post('https://justdrive.astexlabs.com.evil.example'))).toBe(false);
+    expect(isSameOrigin(post('https://evil.example', 'https://justdrive.astexlabs.com/logout'))).toBe(false);
   });
 
   it('rejects http when the app runs on https', () => {
-    expect(isSameOrigin(post('http://drive.astexlabs.com'))).toBe(false);
+    expect(isSameOrigin(post('http://justdrive.astexlabs.com'))).toBe(false);
   });
 
   it('rejects a request with no origin, which a browser form cannot forge', () => {
@@ -52,7 +52,7 @@ describe('same-origin check', () => {
   });
 
   it('ignores the check for safe methods', () => {
-    expect(isSameOrigin(new Request('https://drive.astexlabs.com/devices'))).toBe(true);
+    expect(isSameOrigin(new Request('https://justdrive.astexlabs.com/devices'))).toBe(true);
   });
 });
 
@@ -68,13 +68,13 @@ describe('production hosts', () => {
 
   it('still accepts the configured host in production', () => {
     vi.stubEnv('NODE_ENV', 'production');
-    expect(isSameOrigin(post('https://drive.astexlabs.com'))).toBe(true);
+    expect(isSameOrigin(post('https://justdrive.astexlabs.com'))).toBe(true);
   });
 
   it('fails closed when production has no base url', () => {
     vi.stubEnv('NODE_ENV', 'production');
     vi.stubEnv('JUSTDRIVE_BASE_URL', undefined);
-    expect(() => isSameOrigin(post('https://drive.astexlabs.com'))).toThrow(
+    expect(() => isSameOrigin(post('https://justdrive.astexlabs.com'))).toThrow(
       'JUSTDRIVE_BASE_URL is not set',
     );
   });
@@ -90,10 +90,10 @@ describe('security headers', () => {
   });
 
   it('can add headers to a redirect, whose headers are otherwise immutable', () => {
-    const response = securityHeaders(Response.redirect('https://drive.astexlabs.com/', 303));
+    const response = securityHeaders(Response.redirect('https://justdrive.astexlabs.com/', 303));
 
     expect(response.status).toBe(303);
-    expect(response.headers.get('location')).toBe('https://drive.astexlabs.com/');
+    expect(response.headers.get('location')).toBe('https://justdrive.astexlabs.com/');
     expect(response.headers.get('X-Frame-Options')).toBe('DENY');
   });
 });

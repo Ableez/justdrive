@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { proxy } from './proxy';
 
 function request(path: string, init?: { method?: string; headers?: Record<string, string> }) {
-  return new NextRequest(new URL(path, 'https://drive.astexlabs.com'), init);
+  return new NextRequest(new URL(path, 'https://justdrive.astexlabs.com'), init);
 }
 
 describe('proxy', () => {
