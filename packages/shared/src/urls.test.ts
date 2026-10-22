@@ -3,7 +3,7 @@ import { resolveApiUrl, resolveBaseUrl } from './urls.js';
 
 describe('resolveApiUrl', () => {
   it('falls back to the hosted service', () => {
-    expect(resolveApiUrl({})).toBe('https://drive.astexlabs.com');
+    expect(resolveApiUrl({})).toBe('https://justdrive.astexlabs.com');
   });
 
   it('uses JUSTDRIVE_API_URL when it is set', () => {
@@ -19,7 +19,7 @@ describe('resolveApiUrl', () => {
   });
 
   it('ignores an empty override', () => {
-    expect(resolveApiUrl({ JUSTDRIVE_API_URL: '' })).toBe('https://drive.astexlabs.com');
+    expect(resolveApiUrl({ JUSTDRIVE_API_URL: '' })).toBe('https://justdrive.astexlabs.com');
   });
 });
 

@@ -2,7 +2,7 @@ import { ROOT_FOLDER_NAME } from './constants.js';
 
 export function normalizePath(path: string): string {
   const segments = path.split('/').filter((segment) => segment !== '' && segment !== '.');
-  if (segments[0] === ROOT_FOLDER_NAME) segments.shift();
+  if (segments[0] === ROOT_FOLDER_NAME || segments[0] === 'juststore') segments.shift();
   return segments.join('/');
 }
 
