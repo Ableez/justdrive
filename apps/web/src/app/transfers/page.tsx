@@ -29,36 +29,37 @@ export default async function TransfersPage() {
   return (
     <>
       <AppNav email={user?.email ?? ''} />
-      <main className="mx-auto max-w-4xl px-4 py-10">
+      <main className="mx-auto max-w-4xl px-4 py-8 sm:py-10">
         <PageHeader title="Transfers" />
-        <p className="mb-6 text-sm text-zinc-600 dark:text-zinc-400">
-          Move a file with <code>justdrive send ./file --to vps-2</code>, then collect it on the other
-          machine with <code>justdrive receive</code>.
+        <p className="mb-6 text-sm text-muted-foreground">
+          Send with <code>justdrive send ./file --to vps-2</code>, then receive on the other machine.
         </p>
 
         {rows.length === 0 ? (
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">No transfers yet.</p>
+          <p className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
+            No transfers yet.
+          </p>
         ) : (
           <table className="w-full text-left text-sm">
-            <thead className="text-zinc-500">
+            <thead className="text-muted-foreground">
               <tr>
-                <th className="py-2 font-normal">When</th>
-                <th className="py-2 font-normal">File</th>
-                <th className="py-2 font-normal">From</th>
-                <th className="py-2 font-normal">To</th>
-                <th className="py-2 font-normal">Status</th>
+                <th className="py-2 font-medium">When</th>
+                <th className="py-2 font-medium">File</th>
+                <th className="py-2 font-medium">From</th>
+                <th className="py-2 font-medium">To</th>
+                <th className="py-2 font-medium">Status</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+            <tbody className="divide-y divide-border">
               {rows.map(({ transfer, from, to }) => (
-                <tr key={transfer.id}>
-                  <td className="py-2 whitespace-nowrap text-zinc-500">
+                <tr key={transfer.id} className="hover:bg-muted/40">
+                  <td className="py-2.5 whitespace-nowrap text-muted-foreground">
                     {transfer.createdAt.toISOString().slice(0, 16).replace('T', ' ')}
                   </td>
-                  <td className="py-2 break-all">{transfer.name}</td>
-                  <td className="py-2">{from ?? 'unknown'}</td>
-                  <td className="py-2">{to ?? 'unknown'}</td>
-                  <td className="py-2">{transfer.status}</td>
+                  <td className="py-2.5 break-all">{transfer.name}</td>
+                  <td className="py-2.5">{from ?? 'unknown'}</td>
+                  <td className="py-2.5">{to ?? 'unknown'}</td>
+                  <td className="py-2.5 text-muted-foreground">{transfer.status}</td>
                 </tr>
               ))}
             </tbody>
