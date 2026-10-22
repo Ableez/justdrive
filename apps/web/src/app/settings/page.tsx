@@ -28,29 +28,29 @@ export default async function SettingsPage({
   return (
     <>
       <AppNav email={user?.email ?? ''} />
-      <main className="mx-auto max-w-2xl px-4 py-10">
+      <main className="mx-auto max-w-2xl px-4 py-8 sm:py-10">
         <PageHeader title="Settings" />
         {disconnected ? (
           <p className="mb-4 text-sm text-green-700 dark:text-green-500">Google Drive disconnected.</p>
         ) : null}
 
         <section className="mb-10">
-          <h2 className="mb-2 font-medium">Google Drive</h2>
-          <p className="mb-3 text-sm text-zinc-600 dark:text-zinc-400">
+          <h2 className="mb-2 text-sm font-medium text-muted-foreground">Google Drive</h2>
+          <p className="mb-3 text-sm text-foreground">
             {connected
-              ? 'Connected. Machines get short-lived Drive access from this connection.'
-              : 'Not connected. Reconnect to let machines use Drive.'}
+              ? 'Connected. Machines get short-lived Drive access.'
+              : 'Not connected. Reconnect to enable Drive.'}
           </p>
           {connected ? (
             <form action={disconnectGoogle}>
-              <button type="submit" className="text-sm underline text-red-600 dark:text-red-400">
-                Disconnect Google Drive
+              <button type="submit" className="text-sm text-red-600 underline-offset-4 hover:underline dark:text-red-400">
+                Disconnect
               </button>
             </form>
           ) : (
             <a
               href="/auth/google"
-              className="inline-block rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
+              className="inline-block rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background"
             >
               Connect Google Drive
             </a>
