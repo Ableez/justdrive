@@ -26,20 +26,24 @@ export default async function DevicesPage({
   return (
     <>
       <AppNav email={user?.email ?? ''} />
-      <main className="mx-auto max-w-4xl px-4 py-10">
+      <main className="mx-auto max-w-4xl px-4 py-8 sm:py-10">
         <PageHeader title="Devices">
-          <a href="/device" className="text-sm underline">
-            Approve a new machine
+          <a href="/device" className="text-sm text-muted-foreground underline-offset-4 hover:underline">
+            Approve machine
           </a>
         </PageHeader>
 
-        {approved ? <p className="mb-4 text-sm text-green-700 dark:text-green-500">Device approved.</p> : null}
-        {denied ? <p className="mb-4 text-sm text-zinc-600 dark:text-zinc-400">Request denied.</p> : null}
+        {approved ? (
+          <p className="mb-4 text-sm text-green-700 dark:text-green-500">Device approved.</p>
+        ) : null}
+        {denied ? <p className="mb-4 text-sm text-muted-foreground">Request denied.</p> : null}
 
         {devices.length === 0 ? (
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">No machines yet.</p>
+          <p className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
+            No machines yet.
+          </p>
         ) : (
-          <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
+          <ul className="divide-y divide-border">
             {devices.map((device) => (
               <DeviceRow key={device.id} device={device} />
             ))}

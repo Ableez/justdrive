@@ -61,12 +61,12 @@ export function DeviceRow({ device }: { device: Device }) {
         value={name}
         onChange={(event) => setName(event.target.value)}
         disabled={Boolean(device.revokedAt) || busy}
-        className="w-48 rounded-md border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+        className="w-48 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
       />
-      <span className="text-sm text-zinc-600 dark:text-zinc-400">
-        {device.hostname ?? 'unknown host'} · {device.os ?? 'unknown os'}
+      <span className="text-sm text-muted-foreground">
+        {device.hostname ?? 'unknown'} · {device.os ?? 'unknown'}
       </span>
-      <span className="text-xs text-zinc-500">
+      <span className="text-xs text-muted-foreground">
         {device.revokedAt
           ? 'revoked'
           : device.lastSeenAt
@@ -74,13 +74,23 @@ export function DeviceRow({ device }: { device: Device }) {
             : 'never seen'}
       </span>
       <span className="ml-auto flex items-center gap-3 text-sm">
-        {message ? <span className="text-zinc-500">{message}</span> : null}
+        {message ? <span className="text-muted-foreground">{message}</span> : null}
         {!device.revokedAt ? (
           <>
-            <button type="button" onClick={rename} disabled={busy || name === device.name} className="underline">
+            <button
+              type="button"
+              onClick={rename}
+              disabled={busy || name === device.name}
+              className="text-foreground underline-offset-4 hover:underline disabled:opacity-50"
+            >
               Save
             </button>
-            <button type="button" onClick={revoke} disabled={busy} className="underline text-red-600 dark:text-red-400">
+            <button
+              type="button"
+              onClick={revoke}
+              disabled={busy}
+              className="text-red-600 underline-offset-4 hover:underline disabled:opacity-50 dark:text-red-400"
+            >
               Revoke
             </button>
           </>
