@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { renderInstallScript } from '#/lib/install-script';
 
-const BASE = 'https://drive.astexlabs.com';
+const BASE = 'https://justdrive.astexlabs.com';
 
 describe('install script', () => {
   it('points at this deployment and the bundled release', () => {

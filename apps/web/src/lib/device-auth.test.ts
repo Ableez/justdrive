@@ -21,7 +21,7 @@ beforeEach(async () => {
 
 describe('device authorization requests', () => {
   it('returns a verification URL carrying the user code', async () => {
-    const meta = await createDeviceAuthRequest(db, 'https://drive.astexlabs.com', {
+    const meta = await createDeviceAuthRequest(db, 'https://justdrive.astexlabs.com', {
       hostname: 'vps-2',
       os: 'linux',
       cliVersion: '0.2.0',
@@ -29,13 +29,13 @@ describe('device authorization requests', () => {
     });
 
     expect(meta.userCode).toMatch(/^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
-    expect(meta.verificationUri).toBe('https://drive.astexlabs.com/device');
+    expect(meta.verificationUri).toBe('https://justdrive.astexlabs.com/device');
     expect(meta.verificationUriComplete).toContain(meta.userCode);
     expect(meta.interval).toBeGreaterThan(0);
   });
 
   it('stays pending until someone approves', async () => {
-    const meta = await createDeviceAuthRequest(db, 'https://drive.astexlabs.com', {});
+    const meta = await createDeviceAuthRequest(db, 'https://justdrive.astexlabs.com', {});
 
     await expect(pollDeviceAuthRequest(db, meta.deviceCode)).resolves.toEqual({
       status: 'authorization_pending',
@@ -43,7 +43,7 @@ describe('device authorization requests', () => {
   });
 
   it('tells a too-fast client to slow down', async () => {
-    const meta = await createDeviceAuthRequest(db, 'https://drive.astexlabs.com', {});
+    const meta = await createDeviceAuthRequest(db, 'https://justdrive.astexlabs.com', {});
     await pollDeviceAuthRequest(db, meta.deviceCode);
 
     await expect(pollDeviceAuthRequest(db, meta.deviceCode)).resolves.toEqual({
@@ -53,7 +53,7 @@ describe('device authorization requests', () => {
   });
 
   it('reports the device once approved', async () => {
-    const meta = await createDeviceAuthRequest(db, 'https://drive.astexlabs.com', {
+    const meta = await createDeviceAuthRequest(db, 'https://justdrive.astexlabs.com', {
       hostname: 'vps-2',
     });
     await expect(claimUserCode(db, meta.userCode, 'user-1', 'vps-2', 'device-1')).resolves.toBe(true);
@@ -67,14 +67,14 @@ describe('device authorization requests', () => {
   });
 
   it('lets a code be claimed only once', async () => {
-    const meta = await createDeviceAuthRequest(db, 'https://drive.astexlabs.com', {});
+    const meta = await createDeviceAuthRequest(db, 'https://justdrive.astexlabs.com', {});
 
     await expect(claimUserCode(db, meta.userCode, 'user-1', 'vps-2', 'device-1')).resolves.toBe(true);
     await expect(claimUserCode(db, meta.userCode, 'user-1', 'vps-3', 'device-1')).resolves.toBe(false);
   });
 
   it('reports a denial', async () => {
-    const meta = await createDeviceAuthRequest(db, 'https://drive.astexlabs.com', {});
+    const meta = await createDeviceAuthRequest(db, 'https://justdrive.astexlabs.com', {});
     await expect(denyUserCode(db, meta.userCode, 'user-1')).resolves.toBe(true);
 
     await expect(pollDeviceAuthRequest(db, meta.deviceCode)).resolves.toEqual({
@@ -87,7 +87,7 @@ describe('device authorization requests', () => {
       status: 'access_denied',
     });
 
-    const meta = await createDeviceAuthRequest(db, 'https://drive.astexlabs.com', {});
+    const meta = await createDeviceAuthRequest(db, 'https://justdrive.astexlabs.com', {});
     await db
       .update(deviceAuthRequests)
       .set({ expiresAt: new Date(Date.now() - 1000) })
@@ -101,7 +101,7 @@ describe('device authorization requests', () => {
 
 describe('approved code consumption', () => {
   it('only lets one approval mint tokens', async () => {
-    const meta = await createDeviceAuthRequest(db, 'https://drive.astexlabs.com', {});
+    const meta = await createDeviceAuthRequest(db, 'https://justdrive.astexlabs.com', {});
     await pollDeviceAuthRequest(db, meta.deviceCode);
     await expect(claimUserCode(db, meta.userCode, 'user-1', 'vps-2', 'device-1')).resolves.toBe(true);
 
@@ -114,7 +114,7 @@ describe('approved code consumption', () => {
   });
 
   it('refuses to claim an expired code', async () => {
-    const meta = await createDeviceAuthRequest(db, 'https://drive.astexlabs.com', {});
+    const meta = await createDeviceAuthRequest(db, 'https://justdrive.astexlabs.com', {});
     await db
       .update(deviceAuthRequests)
       .set({ expiresAt: new Date(Date.now() - 1000) })

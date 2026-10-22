@@ -7,8 +7,8 @@ afterEach(() => {
 
 describe('baseUrl', () => {
   it('uses the configured base url', () => {
-    vi.stubEnv('JUSTDRIVE_BASE_URL', 'https://drive.astexlabs.com');
-    expect(baseUrl()).toBe('https://drive.astexlabs.com');
+    vi.stubEnv('JUSTDRIVE_BASE_URL', 'https://justdrive.astexlabs.com');
+    expect(baseUrl()).toBe('https://justdrive.astexlabs.com');
   });
 
   it('falls back to localhost outside production', () => {
