@@ -7,10 +7,10 @@
 ## Git
 
 - Preserve unrelated user changes. Never reset, clean, or overwrite work without explicit approval.
-- For granular commit requests, verify `git config --list` and `gh auth status`; report the configured username and email before committing.
+- Always commit granularly: group only closely related changes, at most 3-4 files per commit. Never bundle unrelated changes into one commit, even when many files changed.
+- Before every commit, verify `git config --list` and `gh auth status`; report the configured username and email before committing.
 - Keep commit messages under 600 characters and DO NOT add `Co-authored-by` trailers.
 - Always communicate in English.
-- Commits must not be more than 3 files at once related logics or changes max commit per files is 3-4
 
 ## Verification
 
