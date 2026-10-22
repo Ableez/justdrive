@@ -45,31 +45,33 @@ export default async function ActivityPage({
   return (
     <>
       <AppNav email={user?.email ?? ''} />
-      <main className="mx-auto max-w-4xl px-4 py-10">
+      <main className="mx-auto max-w-4xl px-4 py-8 sm:py-10">
         <PageHeader title="Activity" />
         <EventFilters deviceList={deviceList} current={params} />
 
         {rows.length === 0 ? (
-          <p className="mt-6 text-sm text-zinc-600 dark:text-zinc-400">No matching events.</p>
+          <p className="mt-6 rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
+            No matching events.
+          </p>
         ) : (
           <table className="mt-6 w-full text-left text-sm">
-            <thead className="text-zinc-500">
+            <thead className="text-muted-foreground">
               <tr>
-                <th className="py-2 font-normal">When</th>
-                <th className="py-2 font-normal">Type</th>
-                <th className="py-2 font-normal">Path</th>
-                <th className="py-2 font-normal">Device</th>
+                <th className="py-2 font-medium">When</th>
+                <th className="py-2 font-medium">Type</th>
+                <th className="py-2 font-medium">Path</th>
+                <th className="py-2 font-medium">Device</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+            <tbody className="divide-y divide-border">
               {rows.map(({ event, deviceName }) => (
-                <tr key={event.id}>
-                  <td className="py-2 whitespace-nowrap text-zinc-500">
+                <tr key={event.id} className="hover:bg-muted/40">
+                  <td className="py-2.5 whitespace-nowrap text-muted-foreground">
                     {event.at.toISOString().slice(0, 19).replace('T', ' ')}
                   </td>
-                  <td className="py-2 font-mono">{event.type}</td>
-                  <td className="py-2 break-all">{event.path ?? event.detail ?? ''}</td>
-                  <td className="py-2 text-zinc-600 dark:text-zinc-400">{deviceName ?? 'server'}</td>
+                  <td className="py-2.5 font-mono">{event.type}</td>
+                  <td className="py-2.5 break-all">{event.path ?? event.detail ?? ''}</td>
+                  <td className="py-2.5 text-muted-foreground">{deviceName ?? 'server'}</td>
                 </tr>
               ))}
             </tbody>

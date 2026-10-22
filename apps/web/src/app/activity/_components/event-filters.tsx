@@ -43,11 +43,11 @@ export function EventFilters({
       className="flex flex-wrap gap-3 text-sm"
     >
       <label className="flex items-center gap-2">
-        <span className="text-zinc-500">Type</span>
+        <span className="text-muted-foreground">Type</span>
         <select
           name="type"
           defaultValue={current.type ?? ""}
-          className="rounded-md border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-900"
+          className="rounded-md border border-input bg-background px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-ring"
         >
           <option value="">All</option>
           {TYPES.map((type) => (
@@ -59,11 +59,11 @@ export function EventFilters({
       </label>
 
       <label className="flex items-center gap-2">
-        <span className="text-zinc-500">Device</span>
+        <span className="text-muted-foreground">Device</span>
         <select
           name="device"
           defaultValue={current.device ?? ""}
-          className="rounded-md border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-900"
+          className="rounded-md border border-input bg-background px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-ring"
         >
           <option value="">All</option>
           {deviceList.map((device) => (
