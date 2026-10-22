@@ -34,8 +34,8 @@ export default async function DevicePage({
   return (
     <>
       <AppNav email={user?.email ?? ''} />
-      <main className="mx-auto max-w-2xl px-4 py-10">
-        <PageHeader title="Approve a machine" />
+      <main className="mx-auto max-w-2xl px-4 py-8 sm:py-10">
+        <PageHeader title="Approve machine" />
         {error ? (
           <p role="alert" className="mb-4 text-sm text-red-600 dark:text-red-400">
             {ERRORS[error] ?? 'Something went wrong.'}
