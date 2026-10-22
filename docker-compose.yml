@@ -1,0 +1,53 @@
+services:
+  mock:
+    image: node:20-alpine
+    container_name: jd-mock
+    command: ["node", "/server.js"]
+    volumes:
+      - ./docker/mock-server.js:/server.js:ro
+    ports:
+      - "4000:4000"
+    environment:
+      PORT: "4000"
+
+  machine-a:
+    build:
+      context: .
+      dockerfile: docker/cli.Dockerfile
+    container_name: jd-machine-a
+    hostname: machine-a
+    tty: true
+    stdin_open: true
+    environment:
+      JUSTDRIVE_API_URL: http://mock:4000
+      JUSTDRIVE_DRIVE_API_URL: http://mock:4000
+    depends_on:
+      - mock
+
+  machine-b:
+    build:
+      context: .
+      dockerfile: docker/cli.Dockerfile
+    container_name: jd-machine-b
+    hostname: machine-b
+    tty: true
+    stdin_open: true
+    environment:
+      JUSTDRIVE_API_URL: http://mock:4000
+      JUSTDRIVE_DRIVE_API_URL: http://mock:4000
+    depends_on:
+      - mock
+
+  machine-c:
+    build:
+      context: .
+      dockerfile: docker/cli.Dockerfile
+    container_name: jd-machine-c
+    hostname: machine-c
+    tty: true
+    stdin_open: true
+    environment:
+      JUSTDRIVE_API_URL: http://mock:4000
+      JUSTDRIVE_DRIVE_API_URL: http://mock:4000
+    depends_on:
+      - mock
