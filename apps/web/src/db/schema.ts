@@ -50,7 +50,7 @@ export const users = pgTable(
     id: text('id').primaryKey(),
     googleSub: text('google_sub').notNull(),
     email: text('email').notNull(),
-    // The single juststore root folder. Owned by the server so every machine
+    // The single justdrive root folder. Owned by the server so every machine
     // addresses the same tree, instead of each one finding its own.
     driveRootFolderId: text('drive_root_folder_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

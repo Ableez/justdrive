@@ -6,7 +6,7 @@ export default function TermsPage() {
 
       <h2 className="mb-2 text-base font-medium">The service</h2>
       <p className="mb-4">
-        justdrive coordinates machines you approve so they can move files in and out of the juststore
+        justdrive coordinates machines you approve so they can move files in and out of the justdrive
         folder in your own Google Drive. We act as a broker: we never handle file contents.
       </p>
 

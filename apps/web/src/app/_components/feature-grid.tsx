@@ -18,7 +18,7 @@ const features = [
   },
   {
     title: 'Shared folder',
-    body: 'One juststore folder in your Drive, so every machine sees the same files.',
+    body: 'One justdrive folder in your Drive, so every machine sees the same files.',
   },
   {
     title: 'Machine to machine',

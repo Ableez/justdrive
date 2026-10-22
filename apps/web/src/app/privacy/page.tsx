@@ -8,7 +8,7 @@ export default function PrivacyPage() {
       <ul className="mb-4 list-disc pl-5">
         <li>Your Google account subject id and email address.</li>
         <li>An encrypted copy of your Google refresh token, used only to mint short-lived Drive access tokens for machines you approve.</li>
-        <li>The id of your juststore folder in Drive.</li>
+        <li>The id of your justdrive folder in Drive.</li>
         <li>Device records: a name, hostname, operating system, CLI version, and the last IP address seen.</li>
         <li>An activity history of file operations, reported by the CLI.</li>
       </ul>
