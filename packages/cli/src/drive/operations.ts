@@ -193,7 +193,7 @@ export async function removeFile(
 ): Promise<void> {
   const normalized = normalizePath(drivePath);
   if (!normalized) {
-    throw new JustStoreError('Refusing to remove the juststore root folder', 'INVALID_PATH');
+    throw new JustStoreError('Refusing to remove the justdrive root folder', 'INVALID_PATH');
   }
 
   const drive = await getDriveClient();
