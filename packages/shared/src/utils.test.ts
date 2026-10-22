@@ -7,16 +7,16 @@ describe('normalizePath', () => {
     expect(normalizePath('./photos/vacation')).toBe('photos/vacation');
   });
 
-  it('strips a leading juststore folder', () => {
-    expect(normalizePath('juststore/photos/vacation')).toBe('photos/vacation');
+  it('strips a leading justdrive folder', () => {
+    expect(normalizePath('justdrive/photos/vacation')).toBe('photos/vacation');
   });
 
   it('keeps dotfile names intact', () => {
     expect(normalizePath('.env')).toBe('.env');
   });
 
-  it('does not treat juststore as a name prefix', () => {
-    expect(normalizePath('juststore-backups/a.txt')).toBe('juststore-backups/a.txt');
+  it('does not treat justdrive as a name prefix', () => {
+    expect(normalizePath('justdrive-backups/a.txt')).toBe('justdrive-backups/a.txt');
   });
 
   it('strips leading and duplicate slashes', () => {
