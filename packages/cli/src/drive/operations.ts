@@ -1,4 +1,3 @@
-import { drive_v3 } from 'googleapis';
 import fs from 'fs';
 import path from 'path';
 import { pipeline } from 'stream/promises';
@@ -18,14 +17,21 @@ export async function listFiles(drivePath: string): Promise<DriveFile[]> {
   const drive = await getDriveClient();
   const parentId = await resolvePath(drivePath);
 
-  const response = await drive.files.list({
-    q: `'${parentId}' in parents and trashed=false`,
-    fields: `files(${DRIVE_FIELDS})`,
-    spaces: 'drive',
-    orderBy: 'name',
-  });
+  const collected: DriveFile[] = [];
+  let pageToken: string | undefined;
+  do {
+    const response = await drive.files.list({
+      q: `'${parentId.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}' in parents and trashed=false`,
+      fields: `files(${DRIVE_FIELDS}),nextPageToken`,
+      spaces: 'drive',
+      orderBy: 'name',
+      pageToken,
+    });
+    collected.push(...((response.data.files || []) as DriveFile[]));
+    pageToken = response.data.nextPageToken;
+  } while (pageToken);
 
-  return (response.data.files || []) as DriveFile[];
+  return collected;
 }
 
 export const SHARE_ROLES = ['reader', 'commenter', 'writer', 'owner'] as const;
@@ -80,6 +86,7 @@ export async function downloadFile(
 
   // Streamed to a sibling path and renamed on success, so an interrupted
   // download cannot destroy a file that was already at the destination.
+  await fs.promises.mkdir(path.dirname(destPath), { recursive: true });
   const partial = `${destPath}.part`;
   try {
     await pipeline(response.data, fs.createWriteStream(partial));
@@ -109,8 +116,9 @@ export async function ensureDirectory(drivePath: string): Promise<string> {
 }
 
 export async function createDirectory(drivePath: string): Promise<DriveFile> {
-  const drive = await getDriveClient();
   const normalized = normalizePath(drivePath);
+  if (!normalized) throw new JustStoreError('Invalid directory path', 'INVALID_PATH');
+  const drive = await getDriveClient();
   const parts = normalized.split('/');
   const dirName = parts.pop()!;
   const parentPath = parts.join('/');
@@ -140,6 +148,7 @@ export async function moveFile(
   sourcePath: string,
   destPath: string,
 ): Promise<DriveFile> {
+  if (!normalizePath(sourcePath)) throw new JustStoreError('Refusing to move the root folder', 'INVALID_PATH');
   const drive = await getDriveClient();
   const fileId = await resolvePath(sourcePath);
   const normalizedDest = normalizePath(destPath);
@@ -160,7 +169,7 @@ export async function moveFile(
     fileId,
     addParents: newParentId,
     removeParents: (getResponse.data.parents ?? []).includes(newParentId)
-      ? (getResponse.data.parents ?? []).filter((id) => id !== newParentId).join(',')
+      ? (getResponse.data.parents ?? []).filter((id: string) => id !== newParentId).join(',')
       : previousParents,
     requestBody: { name: newName },
     fields: DRIVE_FIELDS,

@@ -51,7 +51,7 @@ vi.mock('fs', async () => {
         return Readable.from(['data']);
       },
       createWriteStream: (...args: unknown[]) => mocks.createWriteStream(...args),
-      promises: { rename: mocks.rename, rm: mocks.rm },
+      promises: { rename: mocks.rename, rm: mocks.rm, mkdir: vi.fn().mockResolvedValue(undefined) },
     },
   };
 });

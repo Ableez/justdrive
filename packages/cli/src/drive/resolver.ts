@@ -1,4 +1,3 @@
-import { drive_v3 } from 'googleapis';
 import { PathNotFoundError, normalizePath } from '@juststore/shared';
 import { getDriveClient } from './client.js';
 import { getCachedPath, removeCachedPath, setCachedPath } from './cache.js';
@@ -35,7 +34,7 @@ async function resolveSegment(name: string, parentId: string): Promise<string> {
 
   const drive = await getDriveClient();
   const response = await drive.files.list({
-    q: `name='${escapeQuery(name)}' and '${parentId}' in parents and trashed=false`,
+    q: `name='${escapeQuery(name)}' and '${parentId.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}' in parents and trashed=false`,
     fields: 'files(id, name)',
     spaces: 'drive',
   });
@@ -77,7 +76,7 @@ export async function resolvePathForWrite(drivePath: string): Promise<string> {
   return resolvePath(normalized);
 }
 
-export async function getFileById(fileId: string): Promise<drive_v3.Schema$File> {
+export async function getFileById(fileId: string): Promise<Record<string, unknown>> {
   const drive = await getDriveClient();
   const response = await drive.files.get({ fileId, fields: 'id, name, size, mimeType' });
   return response.data;
