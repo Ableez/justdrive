@@ -5,6 +5,10 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**", ".next/**"]
     },
+    "@juststore/web#build": {
+      "dependsOn": ["justdrive#build"],
+      "env": ["JUSTDRIVE_BASE_URL"]
+    },
     "dev": {
       "dependsOn": ["^build"],
       "cache": false,

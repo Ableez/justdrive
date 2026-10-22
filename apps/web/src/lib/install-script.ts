@@ -53,7 +53,7 @@ fi
 ok "[1/3] node $(node --version)"
 
 mkdir -p "$BIN_DIR"
-tmp="$PROG.tmp.$$"
+tmp="$(mktemp "$PROG.tmp.XXXXXX")"
 trap 'rm -f "$tmp"' EXIT INT TERM
 fetch "$BASE/r/justdrive.mjs" "$tmp" &
 spin_while "$!" "Downloading justdrive..."
@@ -62,6 +62,9 @@ ok "[2/3] downloaded justdrive.mjs"
 chmod +x "$tmp"
 mv "$tmp" "$PROG"
 trap - EXIT INT TERM
+if ! command -v jd >/dev/null 2>&1 && [ ! -e "$BIN_DIR/jd" ]; then
+  ln -s "$PROG" "$BIN_DIR/jd" 2>/dev/null || cp "$PROG" "$BIN_DIR/jd"
+fi
 ver="$("$PROG" --version 2>/dev/null || echo "")"
 ok "[3/3] installed justdrive $ver to $PROG"
 
