@@ -355,7 +355,7 @@ export async function ensureRootFolder(
   const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
   if (user?.driveRootFolderId) return user.driveRootFolderId;
 
-  // Without a lock two machines signing in together each create a juststore
+  // Without a lock two machines signing in together each create a justdrive
   // folder, and the last write to the column wins.
   return db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${userId}))`);
