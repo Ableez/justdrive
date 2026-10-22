@@ -25,7 +25,7 @@ afterEach(async () => {
 
 /** logActivity delivers in the background, so let the microtasks drain. */
 async function settle() {
-  for (let i = 0; i < 50; i += 1) await new Promise((resolve) => setImmediate(resolve));
+  for (let i = 0; i < 500; i += 1) await new Promise((resolve) => setImmediate(resolve));
 }
 
 describe('logActivity', () => {

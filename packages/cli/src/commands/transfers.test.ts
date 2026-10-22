@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   ensureDirectory: vi.fn(),
   logActivity: vi.fn(),
   existsSync: vi.fn(),
+  statSync: vi.fn(() => ({ isFile: () => true })),
   filesGet: vi.fn(),
   filesDelete: vi.fn(),
   promises: {
@@ -39,6 +40,7 @@ vi.mock('../output/table.js', () => ({ formatRows: () => 'rows' }));
 vi.mock('fs', () => ({
   default: {
     existsSync: mocks.existsSync,
+    statSync: mocks.statSync,
     createWriteStream: () => {
       const { Writable } = require('stream');
       return new Writable({ write: (_c: unknown, _e: unknown, cb: () => void) => cb() });
@@ -115,7 +117,9 @@ describe('sendCommand', () => {
   });
 
   it('refuses a file that is not there', async () => {
-    mocks.existsSync.mockReturnValue(false);
+    mocks.statSync.mockImplementationOnce(() => {
+      throw new Error('ENOENT');
+    });
 
     await sendCommand.parseAsync(['./missing', '--to', 'vps-2'], { from: 'user' });
 

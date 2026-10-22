@@ -14,8 +14,16 @@ export const sendCommand = new Command('send')
   .argument('<file>', 'Local file to send')
   .requiredOption('-t, --to <device>', 'Target machine name')
   .action(async (file: string, options: { to: string }) => {
-    if (!fs.existsSync(file)) {
+    let stat: fs.Stats;
+    try {
+      stat = fs.statSync(file);
+    } catch {
       console.error(`No such file: ${file}`);
+      process.exitCode = 1;
+      return;
+    }
+    if (!stat.isFile()) {
+      console.error(`Not a file: ${file}`);
       process.exitCode = 1;
       return;
     }
@@ -51,7 +59,7 @@ export const sendCommand = new Command('send')
     });
 
     console.log(chalk.green(`Sent ${uploaded.name} to ${options.to}.`));
-    console.log(`Collect it there with: justdrive receive ${transfer.id}`);
+    console.log('Collect it there with: justdrive receive');
   });
 
 export const inboxCommand = new Command('inbox')
@@ -84,17 +92,77 @@ export const receiveCommand = new Command('receive')
   .argument('[destination]', 'Local directory', '.')
   .action(async (id: string | undefined, destination: string) => {
     const transfers = await fetchTransfers(true);
-    const wanted = selectTransfers(transfers, id);
+
+    let chosen: RemoteTransfer[] = [];
+    let dest = destination;
+
+    if (id === undefined) {
+      if (!process.stdin.isTTY) {
+        console.error('Non-interactive terminal: use `justdrive receive all` or provide an id.');
+        process.exitCode = 1;
+        return;
+      }
+      if (transfers.length === 0) {
+        console.log('Inbox is empty.');
+        return;
+      }
+
+      console.log(
+        formatRows(
+          ['Id', 'Name', 'Size', 'Sent'],
+          transfers.map((transfer, index) => [
+            `${index + 1}. ${transfer.id.slice(0, 8)}`,
+            transfer.name,
+            transfer.bytes ?? '',
+            transfer.created_at.slice(0, 16).replace('T', ' '),
+          ]),
+        ),
+      );
+      console.log(chalk.dim('Enter numbers (comma-separated), "all", or press Enter for all.'));
+
+      const rl = (await import('node:readline/promises')).createInterface({
+        input: process.stdin,
+        output: process.stdout,
+      });
+      const selection = (await rl.question('Select files: ')).trim();
+      if (selection && selection.toLowerCase() !== 'all') {
+        const indexes = [...new Set(
+          selection
+            .split(',')
+            .map((part) => (/^\d+$/.test(part.trim()) ? Number(part.trim()) : NaN))
+            .filter((n) => Number.isInteger(n) && n >= 1 && n <= transfers.length),
+        )];
+        chosen = indexes.map((n) => transfers[n - 1]);
+      } else {
+        chosen = transfers;
+      }
+
+      if (chosen.length === 0) {
+        console.log('Nothing selected.');
+        return;
+      }
+
+      const answer = (await rl.question(`Destination directory [${dest}]: `)).trim();
+      if (answer) dest = answer;
+    } else {
+      chosen = selectTransfers(transfers, id);
+      if (chosen.length === 0) {
+        console.log(id ? `No pending transfer matching "${id}".` : 'Inbox is empty.');
+        return;
+      }
+    }
+
+    const wanted = chosen;
 
     if (wanted.length === 0) {
-      console.log(id ? `No pending transfer matching "${id}".` : 'Inbox is empty.');
+      console.log('Inbox is empty.');
       return;
     }
 
     for (const transfer of wanted) {
       let localPath: string;
       try {
-        localPath = path.join(destination, safeFileName(transfer));
+        localPath = path.join(dest, safeFileName(transfer));
         await downloadFileById(transfer.drive_file_id, localPath);
       } catch (error) {
         console.error(`Skipped ${transfer.name}: ${(error as Error).message}`);
@@ -122,7 +190,7 @@ export const receiveCommand = new Command('receive')
   });
 
 function selectTransfers(transfers: RemoteTransfer[], id: string | undefined): RemoteTransfer[] {
-  if (!id || id === 'all') return transfers;
+  if (!id || id.toLowerCase() === 'all') return transfers;
 
   const matches = transfers.filter((transfer) => transfer.id.startsWith(id));
   if (matches.length > 1) {
@@ -139,7 +207,13 @@ function selectTransfers(transfers: RemoteTransfer[], id: string | undefined): R
 /** A name arrives from the server and becomes a path, so it must not be one. */
 function safeFileName(transfer: RemoteTransfer): string {
   const name = path.basename(transfer.name);
-  if (!name || name === '.' || name === '..' || name !== transfer.name) {
+  if (
+    !name ||
+    name === '.' ||
+    name === '..' ||
+    name !== transfer.name ||
+    /[\/\\\\\x00-\x1f]/.test(name)
+  ) {
     throw new JustStoreError(`Unsafe transfer name: ${transfer.name}`, 'INVALID_PATH');
   }
   return name;
