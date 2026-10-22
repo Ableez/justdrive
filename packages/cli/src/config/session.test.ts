@@ -8,7 +8,7 @@ let home: string;
 
 const session: DeviceSession = {
   version: 1,
-  apiUrl: 'https://drive.astexlabs.com',
+  apiUrl: 'https://justdrive.astexlabs.com',
   accessToken: 'jd_at_access',
   accessExpiresAt: 1_800_000_000_000,
   refreshToken: 'jd_rt_refresh',

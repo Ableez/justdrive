@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../api/client.js', () => ({
   requireSession: mocks.requireSession,
   fetchDriveToken: mocks.fetchDriveToken,
-  getApiUrl: () => process.env.JUSTDRIVE_API_URL || 'https://drive.astexlabs.com',
+  getApiUrl: () => process.env.JUSTDRIVE_API_URL || 'https://justdrive.astexlabs.com',
 }));
 vi.mock('../logger/outbox.js', () => ({
   pendingCount: mocks.pendingCount,
@@ -27,7 +27,7 @@ beforeEach(() => {
   mocks.requireSession.mockResolvedValue({
     deviceName: 'vps-1',
     email: 'a@b.com',
-    apiUrl: 'https://drive.astexlabs.com',
+    apiUrl: 'https://justdrive.astexlabs.com',
   });
   mocks.pendingCount.mockResolvedValue(0);
   mocks.flush.mockResolvedValue({ sent: 0, remaining: 0 });
@@ -40,7 +40,7 @@ describe('statusCommand', () => {
       deviceName: 'vps-1',
       email: 'a@b.com',
       // Deliberately stale, to prove it is not what gets reported.
-      apiUrl: 'https://drive.astexlabs.com',
+      apiUrl: 'https://justdrive.astexlabs.com',
     });
 
     await statusCommand.parseAsync([], { from: 'user' });
