@@ -4,6 +4,8 @@ import path from 'path';
 import chalk from 'chalk';
 import { getApiUrl } from '../api/client.js';
 import { getConfigDir } from '../config/paths.js';
+import { playLogoAnimation } from '../output/ascii-logo.js';
+import { title, note, line } from '../output/ui.js';
 
 declare const __VERSION__: string;
 
@@ -71,6 +73,8 @@ export async function checkForUpdate(notify = true): Promise<string | null> {
 export const updateCommand = new Command('update')
   .description('Update justdrive to the latest release')
   .action(async () => {
+    await playLogoAnimation();
+    title('Update');
     console.log('Checking for updates...');
     const latest = await fetchLatestVersion();
     if (!latest) {
