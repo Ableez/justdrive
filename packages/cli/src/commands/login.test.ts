@@ -20,8 +20,8 @@ import { loginCommand } from './login.js';
 const code = {
   device_code: 'd',
   user_code: 'BCDF-GHJK',
-  verification_uri: 'https://drive.astexlabs.com/device',
-  verification_uri_complete: 'https://drive.astexlabs.com/device?user_code=BCDF-GHJK',
+  verification_uri: 'https://justdrive.astexlabs.com/device',
+  verification_uri_complete: 'https://justdrive.astexlabs.com/device?user_code=BCDF-GHJK',
   expires_in: 600,
   interval: 5,
 };

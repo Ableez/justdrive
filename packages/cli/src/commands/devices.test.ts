@@ -10,7 +10,7 @@ vi.mock('../api/client.js', () => ({
   listDevices: mocks.listDevices,
   requireSession: mocks.requireSession,
   fetchDriveToken: mocks.fetchDriveToken,
-  getApiUrl: () => 'https://drive.astexlabs.com',
+  getApiUrl: () => 'https://justdrive.astexlabs.com',
 }));
 
 vi.mock('../output/table.js', () => ({ formatRows: () => 'rows' }));

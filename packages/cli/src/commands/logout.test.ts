@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../api/device-login.js', () => ({ runLogout: mocks.runLogout }));
-vi.mock('../api/client.js', () => ({ getApiUrl: () => 'https://drive.astexlabs.com' }));
+vi.mock('../api/client.js', () => ({ getApiUrl: () => 'https://justdrive.astexlabs.com' }));
 vi.mock('../drive/cache.js', () => ({ clearCache: mocks.clearCache }));
 vi.mock('../drive/client.js', () => ({ resetDriveClient: mocks.resetDriveClient }));
 vi.mock('../logger/outbox.js', () => ({ pendingCount: mocks.pendingCount }));
@@ -51,7 +51,7 @@ describe('logoutCommand', () => {
 
     expect(output()).toContain('Signed out on this machine only.');
     expect(output()).toContain('fetch failed');
-    expect(output()).toContain('drive.astexlabs.com/devices');
+    expect(output()).toContain('justdrive.astexlabs.com/devices');
     // A machine the user believes they revoked must not exit successfully.
     expect(process.exitCode).toBe(1);
     // The local session still goes, because the user asked to be signed out here.
