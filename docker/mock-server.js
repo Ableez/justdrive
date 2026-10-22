@@ -25,6 +25,21 @@ const server = http.createServer(async (req, res) => {
   const method = req.method;
 
   // Device code
+  if (method === 'GET' && path === '/r/version') {
+    return json(res, 200, { version: '9.9.9' });
+  }
+  if (method === 'GET' && path === '/r/justdrive.mjs') {
+    // Serve the installed binary back as the "latest" for testing.
+    const fs = require('fs');
+    try {
+      const data = fs.readFileSync('/usr/local/bin/justdrive');
+      res.writeHead(200, { 'Content-Type': 'application/javascript' });
+      res.end(data);
+    } catch (e) {
+      json(res, 500, { error: e.message });
+    }
+    return;
+  }
   if (method === 'POST' && path === '/api/cli/device-code') {
     const code = uuid();
     const meta = { hostname: 'machine', deviceCode: code };

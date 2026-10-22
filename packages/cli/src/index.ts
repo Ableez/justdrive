@@ -15,6 +15,7 @@ import {
 } from './commands/files.js';
 import { shareCommand } from './commands/share.js';
 import { sendCommand, inboxCommand, receiveCommand } from './commands/transfers.js';
+import { updateCommand, checkForUpdate } from './commands/update.js';
 
 declare const __VERSION__: string;
 
@@ -40,6 +41,9 @@ program.addCommand(shareCommand);
 program.addCommand(sendCommand);
 program.addCommand(inboxCommand);
 program.addCommand(receiveCommand);
+program.addCommand(updateCommand);
+
+void checkForUpdate().catch(() => {});
 
 program.parseAsync().catch((error) => {
   console.error(describeError(error));
